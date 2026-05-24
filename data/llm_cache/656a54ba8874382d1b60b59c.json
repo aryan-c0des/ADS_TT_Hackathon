@@ -1,0 +1,14 @@
+{
+  "source": "synthetic",
+  "raw_text": "{\"step_therapy_text\": \"\", \"moderate_to_severe_only\": true, \"phototherapy_mandatory\": false, \"step_graph\": {\"universal_branch\": [], \"indication_branch\": []}, \"evidence_snippets\": []}",
+  "payload": {
+    "step_therapy_text": "",
+    "moderate_to_severe_only": true,
+    "phototherapy_mandatory": false,
+    "step_graph": {
+      "universal_branch": [],
+      "indication_branch": []
+    },
+    "evidence_snippets": []
+  }
+}

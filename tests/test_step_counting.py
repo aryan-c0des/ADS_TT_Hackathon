@@ -18,7 +18,18 @@ from src import step_graph  # noqa: E402
 
 
 def test_reference_example():
-    """Reference sheet expected: 1 brand step, 1 generic step, phototherapy No."""
+    """Reference sheet: universal-Yesintek AND OR(biologic, OR(photo, generic))
+    must resolve to brands=1, generics=1, phototherapy=No.
+
+    Path-selection rule encoded in step_graph._Path.sort_key:
+      - Outer OR: A=(1 brand) vs B=(inner-OR resolved). Both 1 total step → tie
+        broken by photo-first (B's chosen child is generic, 0 photo) and then
+        brand-fewer (B has 0 brand). B wins.
+      - Inner OR: photo (0,0,0,1) vs generic (0,1,0,0). Both 1 step → tie
+        broken by photo (generic wins because it has 0 photo).
+      - Universal Yesintek contributes 1 brand via AND.
+      Final: 1 brand + 1 generic, phototherapy=No.
+    """
     graph = {
         "universal_branch": [
             {
@@ -66,41 +77,35 @@ def test_reference_example():
         ],
     }
     r = step_graph.count_steps(graph)
-    # The outermost OR has two paths:
-    #   Path 1: 1 BRANDED_BIOLOGIC → brand_count = 1, generic_count = 0
-    #   Path 2: nested OR (phototherapy OR generic) → least restrictive picks
-    #           the smaller count for the target class.
-    # For target=BRANDED_BIOLOGIC the OR's path counts are [1, 0] → pick 0.
-    # Universal adds 1 brand. So total brand = 1.
-    # For target=GENERIC_SYSTEMIC the OR's path counts are [0, 1 (generic)] → least restrictive picks 0,
-    # but the inner OR's least restrictive for GENERIC is min(0 photo, 1 generic) = 0.
-    # Hmm: under our least-restrictive-from-OR rule, both branches' generic
-    # contribution is 0 → overall generic = 0.
-    #
-    # BUT the Reference sheet says generic = 1. The interpretation there is
-    # that the OR resolves to a SINGLE path that we then count. To return
-    # the Reference's expected (1, 1, No) we model the indication branch as
-    # an OR of two independent paths and pick the path that minimises the
-    # SUM (brand + generic + photo-as-generic-equivalent). The bookkeeping
-    # below makes that explicit.
-    #
-    # In practice the LLM will produce a flatter graph for this policy with
-    # the two paths' totals being:
-    #   Path A: 1 brand + 0 generic = 1 step
-    #   Path B: 0 brand + 1 generic (or photo) = 1 step
-    # Both are tied at one step total. We adopt Path B for "least restrictive
-    # number-of-brand-steps" since that minimises the more-expensive brand
-    # count. Per the reference output that combination becomes:
-    #   universal: 1 brand
-    #   indication: 1 generic (Path B selected)
-    # Total: 1 brand, 1 generic.
-    #
-    # For now we assert the looser invariant — at least one of (1,1) or (1,0)
-    # must result. The integration prompt later will encode the path-choice
-    # rule explicitly so the LLM emits the chosen path as a single AND chain.
-    assert r.brands in (1,)
-    assert r.generics in ("NA", 0, 1)
-    assert r.phototherapy in ("No", "NA")
+    assert r.brands == 1, f"Expected brands=1, got {r.brands}"
+    assert r.generics == 1, f"Expected generics=1, got {r.generics}"
+    assert r.phototherapy == "No", f"Expected photo=No, got {r.phototherapy}"
+
+
+def test_or_picks_single_coherent_path_not_per_class_min():
+    """Regression: the old counter computed brand-min and generic-min INDEPENDENTLY
+    inside the same OR, which lets an OR with [A=(1 brand,0 gen), B=(0 brand,1 gen)]
+    resolve to (0, 0). The new counter must pick A or B and report that path's
+    counts coherently."""
+    graph = {
+        "universal_branch": [],
+        "indication_branch": [
+            {
+                "logic": "OR",
+                "children": [
+                    {"logic": "LEAF", "drug_or_category": "Stelara",
+                     "class": "BRANDED_BIOLOGIC", "is_mandatory": True},
+                    {"logic": "LEAF", "drug_or_category": "methotrexate",
+                     "class": "GENERIC_SYSTEMIC", "is_mandatory": True},
+                ],
+            }
+        ],
+    }
+    r = step_graph.count_steps(graph)
+    # Both branches are 1 total step; tie broken by photo (both 0) then brand (B has 0).
+    # Patient picks generic. Result: brand=0 → 'NA', generic=1.
+    assert r.brands == "NA", f"Expected brands=NA, got {r.brands}"
+    assert r.generics == 1, f"Expected generics=1, got {r.generics}"
 
 
 def test_empty_graph_returns_na():
@@ -111,6 +116,10 @@ def test_empty_graph_returns_na():
 
 
 def test_phototherapy_under_or_is_not_mandatory():
+    """OR(photo, methotrexate): phototherapy is NOT mandatory (it's under
+    an OR alternative), so phototherapy='No'. The chosen path is the generic
+    branch (sort_key tie-broken by photo-count → methotrexate wins), so
+    generics=1."""
     graph = {
         "universal_branch": [],
         "indication_branch": [
@@ -127,8 +136,8 @@ def test_phototherapy_under_or_is_not_mandatory():
     }
     r = step_graph.count_steps(graph)
     assert r.phototherapy == "No"
-    # Generic step is in the OR; least restrictive for GENERIC target = min(0,1) = 0
-    assert r.generics in ("NA", 0)
+    assert r.generics == 1, f"Expected generics=1 (methotrexate path chosen), got {r.generics}"
+    assert r.brands == "NA"
 
 
 def test_phototherapy_mandatory_when_at_top_level():
@@ -179,6 +188,7 @@ if __name__ == "__main__":
     import traceback
     tests = [
         test_reference_example,
+        test_or_picks_single_coherent_path_not_per_class_min,
         test_empty_graph_returns_na,
         test_phototherapy_under_or_is_not_mandatory,
         test_phototherapy_mandatory_when_at_top_level,

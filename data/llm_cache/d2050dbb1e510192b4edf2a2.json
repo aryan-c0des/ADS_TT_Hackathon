@@ -1,0 +1,18 @@
+{
+  "source": "synthetic",
+  "raw_text": "{\"reauthorization_requirements\": {\"value\": \"Continuation per policy\", \"evidence\": \"Continuation per policy\"}, \"specialist_types\": {\"value\": \"NA\", \"evidence\": \"\"}, \"quantity_limits\": {\"value\": \"Not specified\", \"evidence\": \"\"}}",
+  "payload": {
+    "reauthorization_requirements": {
+      "value": "Continuation per policy",
+      "evidence": "Continuation per policy"
+    },
+    "specialist_types": {
+      "value": "NA",
+      "evidence": ""
+    },
+    "quantity_limits": {
+      "value": "Not specified",
+      "evidence": ""
+    }
+  }
+}

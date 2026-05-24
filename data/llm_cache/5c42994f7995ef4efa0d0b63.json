@@ -1,0 +1,18 @@
+{
+  "source": "synthetic",
+  "raw_text": "{\"reauthorization_requirements\": {\"value\": \"NA\", \"evidence\": \"\"}, \"specialist_types\": {\"value\": \"NA\", \"evidence\": \"\"}, \"quantity_limits\": {\"value\": \"Quantity Limit                    FDA-recommended dosing\", \"evidence\": \"Quantity Limit                    FDA-recommended dosing\"}}",
+  "payload": {
+    "reauthorization_requirements": {
+      "value": "NA",
+      "evidence": ""
+    },
+    "specialist_types": {
+      "value": "NA",
+      "evidence": ""
+    },
+    "quantity_limits": {
+      "value": "Quantity Limit                    FDA-recommended dosing",
+      "evidence": "Quantity Limit                    FDA-recommended dosing"
+    }
+  }
+}

@@ -26,7 +26,7 @@ except ImportError:
     genai = None  # type: ignore
 
 
-_call_counter = {"calls": 0, "errors": 0}
+_call_counter = {"calls": 0, "errors": 0, "synthetic_hits": 0, "real_hits": 0}
 
 
 @dataclass
@@ -57,7 +57,15 @@ def _read_cache(prompt_hash: str) -> Optional[Dict[str, Any]]:
     p = _cache_path(prompt_hash)
     if p.exists():
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            data = json.loads(p.read_text(encoding="utf-8"))
+            # Track whether this hit came from the synthetic seed cache or
+            # from a real Gemini response. pipeline.run_all surfaces a
+            # warning at the end of a run if any synthetic entries were hit.
+            if data.get("source") == "synthetic":
+                _call_counter["synthetic_hits"] += 1
+            else:
+                _call_counter["real_hits"] += 1
+            return data
         except json.JSONDecodeError:
             return None
     return None
@@ -66,6 +74,7 @@ def _read_cache(prompt_hash: str) -> Optional[Dict[str, Any]]:
 def _write_cache(prompt_hash: str, response_text: str, payload: Dict[str, Any]) -> None:
     p = _cache_path(prompt_hash)
     p.write_text(json.dumps({
+        "source": "gemini",
         "raw_text": response_text,
         "payload": payload,
     }, indent=2), encoding="utf-8")

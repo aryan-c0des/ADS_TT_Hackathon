@@ -97,6 +97,10 @@ If you touch any of these, `tests/test_step_counting.py` must still pass — tho
 - **Multi-brand PDFs** (9 of the 70) appear in the Submissions sheet as separate rows. Pipeline iterates Submissions, not PDFs.
 - **The 13 minor brands** (AMJEVITA, COSENTYX, etc., 18 rows total) are likely the weakest spot for accuracy. Spot-check those audit cards before submitting.
 
+## When the user asks "what are my next steps"
+
+Read `NEXTSTEPS.md` at the project root and present its contents. That file owns the user-facing remaining-tasks playbook; do not rewrite it from memory.
+
 ## When the user asks for changes
 
 - Bug in step counting: open `src/step_graph.py`, write a failing test in `tests/test_step_counting.py` first, then fix.

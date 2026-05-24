@@ -21,10 +21,24 @@ from . import (
     extract_params,
     extract_text,
     ingest,
+    llm_client,
     segment_brand,
     step_graph,
     validate,
 )
+
+
+# Characters that Excel/Sheets interpret as the start of a formula. If an LLM
+# returns a value starting with one of these (e.g., "-Tremfya is preferred"),
+# opening result.csv in a spreadsheet would execute the cell. Defang by
+# prefixing with a single quote — Excel treats the prefixed cell as text.
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _defang_csv_value(value: Any) -> Any:
+    if isinstance(value, str) and value and value[0] in _CSV_FORMULA_PREFIXES:
+        return "'" + value
+    return value
 
 
 def _row_to_csv_dict(filename: str, brand: str,
@@ -34,7 +48,7 @@ def _row_to_csv_dict(filename: str, brand: str,
         "Brand": brand,
     }
     for col in config.SUBMISSION_COLUMNS[2:-1]:  # skip Filename, Brand, Access Score
-        out[col] = fixed.get(col, "")
+        out[col] = _defang_csv_value(fixed.get(col, ""))
     out["Access Score"] = score
     return out
 
@@ -140,4 +154,25 @@ def run_all(*, run_self_consistency: bool = False, limit: int | None = None,
     )
     if verbose:
         print(f"\nWrote {config.RESULT_CSV} ({len(df)} rows)")
+    _warn_if_synthetic_cache_hit()
     return df
+
+
+def _warn_if_synthetic_cache_hit() -> None:
+    """If any cache reads came from mock_seed-generated entries, warn loudly.
+    Judges who skip the README's `rm -f data/llm_cache/*` step would
+    otherwise grade the synthetic seeds as a real Gemini run."""
+    state = llm_client.counter_state()
+    synth = state.get("synthetic_hits", 0)
+    real = state.get("real_hits", 0)
+    if synth == 0:
+        return
+    print(
+        "\n" + "!" * 72 + "\n"
+        f"WARNING: {synth} cache reads came from synthetic seeds "
+        f"(real Gemini reads: {real}).\n"
+        "result.csv may contain mocked values, not real LLM extraction.\n"
+        "To re-run against the live LLM: `rm -f data/llm_cache/*` and ensure "
+        "GEMINI_API_KEY is set.\n"
+        + "!" * 72
+    )

@@ -1,0 +1,18 @@
+{
+  "source": "synthetic",
+  "raw_text": "{\"reauthorization_requirements\": {\"value\": \"NA\", \"evidence\": \"\"}, \"specialist_types\": {\"value\": \"Rheumatolog\", \"evidence\": \"rheumatolog\"}, \"quantity_limits\": {\"value\": \"Not specified\", \"evidence\": \"\"}}",
+  "payload": {
+    "reauthorization_requirements": {
+      "value": "NA",
+      "evidence": ""
+    },
+    "specialist_types": {
+      "value": "Rheumatolog",
+      "evidence": "rheumatolog"
+    },
+    "quantity_limits": {
+      "value": "Not specified",
+      "evidence": ""
+    }
+  }
+}

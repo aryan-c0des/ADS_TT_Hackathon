@@ -19,9 +19,8 @@ not under any OR ancestor.
 """
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 from . import config
 
@@ -77,49 +76,102 @@ def reconcile_class(node: Dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Recursive counters
+# Path-counts: single-walk that picks a coherent OR-path
 # ---------------------------------------------------------------------------
-def _walk_nodes(nodes: List[Dict[str, Any]], target: str, under_or: bool,
-                trace: List[str]) -> int:
-    total = 0
+# Earlier versions of this file walked the graph once per target class
+# (BRAND, GENERIC, TOPICAL) and took the min independently inside each OR.
+# That produced incoherent results: an OR with [A=(1 brand, 0 gen),
+# B=(0 brand, 1 gen)] would resolve to "0 brand AND 0 gen" — i.e., the
+# counter pretended the patient could satisfy both branches simultaneously.
+#
+# The fix: walk the graph ONCE, return a _Path tuple per branch, and at
+# each OR pick the single child path that minimises a tie-break key.
+# Tie-break order (from Reference-sheet worked example):
+#   1. Fewest total steps (sum of brand+generic+topical+photo)
+#   2. Fewest phototherapy steps (prefer paths the patient can satisfy
+#      without UV/PUVA visits — Reference resolves photo-vs-generic to generic)
+#   3. Fewest branded steps (generic is cheaper for the patient than brand)
+@dataclass
+class _Path:
+    brand: int = 0
+    generic: int = 0
+    topical: int = 0
+    photo: int = 0
+    trace: List[str] = field(default_factory=list)
+
+    @property
+    def sort_key(self):
+        total = self.brand + self.generic + self.topical + self.photo
+        return (total, self.photo, self.brand)
+
+    def __add__(self, other: "_Path") -> "_Path":
+        return _Path(
+            brand=self.brand + other.brand,
+            generic=self.generic + other.generic,
+            topical=self.topical + other.topical,
+            photo=self.photo + other.photo,
+            trace=self.trace + other.trace,
+        )
+
+
+def _walk(nodes: List[Dict[str, Any]]) -> _Path:
+    """Recursive walk that returns the chosen path through any OR nodes.
+
+    The tuple returned represents the count contribution of these nodes
+    after collapsing every OR to its least-restrictive child path."""
+    path = _Path()
     for n in nodes:
         logic = (n.get("logic") or "LEAF").upper()
+        drug = n.get("drug_or_category") or "?"
         if logic == "LEAF":
             cls = reconcile_class(n)
-            hit = (cls == target)
-            if hit:
-                total += 1
-                trace.append(f"  LEAF {n.get('drug_or_category','?')!r} → {cls} (+1)")
-            else:
-                trace.append(f"  LEAF {n.get('drug_or_category','?')!r} → {cls}")
+            leaf = _Path()
+            if cls == "BRANDED_BIOLOGIC":
+                leaf.brand = 1
+            elif cls == "GENERIC_SYSTEMIC":
+                leaf.generic = 1
+            elif cls == "TOPICAL":
+                leaf.topical = 1
+            elif cls == "PHOTOTHERAPY":
+                leaf.photo = 1
+            tag = "+1" if (leaf.brand or leaf.generic or leaf.topical or leaf.photo) else ""
+            leaf.trace.append(f"  LEAF {drug!r} → {cls} {tag}".rstrip())
+            path = path + leaf
         elif logic == "AND":
-            trace.append("  AND-block (sum children):")
-            total += _walk_nodes(n.get("children", []), target, under_or, trace)
+            sub = _walk(n.get("children", []))
+            path.trace.append("  AND-block (sum children):")
+            path = path + sub
         elif logic == "OR":
             children = n.get("children", []) or []
             if not children:
                 continue
-            sub_traces = [[] for _ in children]
-            sub_counts: List[int] = []
-            for ch, tr in zip(children, sub_traces):
-                sub_counts.append(_walk_nodes([ch], target, True, tr))
-            best = min(sub_counts)
-            best_idx = sub_counts.index(best)
-            trace.append("  OR-block (least restrictive):")
-            for i, (cnt, tr) in enumerate(zip(sub_counts, sub_traces)):
+            sub_paths = [_walk([ch]) for ch in children]
+            best_idx = min(range(len(sub_paths)),
+                           key=lambda i: sub_paths[i].sort_key)
+            path.trace.append("  OR-block (least restrictive — single path chosen):")
+            for i, sp in enumerate(sub_paths):
                 mark = "✓" if i == best_idx else " "
-                trace.append(f"    {mark} branch {i+1} = {cnt}")
-                trace.extend("      " + s for s in tr)
-            total += best
+                path.trace.append(
+                    f"    {mark} branch {i+1}: "
+                    f"brand={sp.brand} gen={sp.generic} top={sp.topical} photo={sp.photo}"
+                )
+            path = path + sub_paths[best_idx]
         else:
             # Unknown logic — treat as LEAF
             cls = reconcile_class(n)
-            if cls == target:
-                total += 1
-    return total
+            leaf = _Path()
+            if cls == "BRANDED_BIOLOGIC":
+                leaf.brand = 1
+            elif cls == "GENERIC_SYSTEMIC":
+                leaf.generic = 1
+            elif cls == "TOPICAL":
+                leaf.topical = 1
+            path = path + leaf
+    return path
 
 
-def _has_mandatory_phototherapy(nodes: List[Dict[str, Any]], under_or: bool) -> bool:
+def _has_mandatory_phototherapy(nodes: List[Dict[str, Any]],
+                                 under_or: bool = False) -> bool:
     """Walk the tree; return True iff a PHOTOTHERAPY leaf is required and
     not under any OR ancestor."""
     for n in nodes:
@@ -182,18 +234,15 @@ def count_steps(step_graph: Dict[str, Any]) -> CountResult:
         "is_mandatory": True,
     }]
 
-    brand_trace: List[str] = []
-    brand_count = _walk_nodes(combined, "BRANDED_BIOLOGIC", False, brand_trace)
-    generic_trace: List[str] = []
-    generic_count = _walk_nodes(combined, "GENERIC_SYSTEMIC", False, generic_trace)
-    # Topicals count as generic per business rules
-    topical_trace: List[str] = []
-    topical_count = _walk_nodes(combined, "TOPICAL", False, topical_trace)
-    generic_count += topical_count
-    generic_trace.extend(topical_trace)
+    chosen = _walk(combined)
+    brand_count = chosen.brand
+    generic_count = chosen.generic + chosen.topical  # topicals count as generic
+    # Same single trace describes both — we walked once and chose one path.
+    brand_trace = chosen.trace
+    generic_trace = chosen.trace
 
     photo_present = _has_any_phototherapy(combined)
-    photo_mandatory = _has_mandatory_phototherapy(combined, False)
+    photo_mandatory = _has_mandatory_phototherapy(combined)
 
     brands_out: Any = "NA" if brand_count == 0 else brand_count
     generics_out: Any = "NA" if generic_count == 0 else generic_count

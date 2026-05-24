@@ -132,7 +132,7 @@ def _seed_for_row(filename: str, brand: str) -> None:
 
 
 def _store(prompt: str, schema: dict, system: str, payload: dict,
-           temperature: float = None) -> None:
+           temperature: float | None = None) -> None:
     if temperature is None:
         temperature = config.GEMINI_TEMPERATURE_DEFAULT
     schema_str = json.dumps(schema, sort_keys=True)
@@ -140,8 +140,14 @@ def _store(prompt: str, schema: dict, system: str, payload: dict,
         config.GEMINI_MODEL, temperature, system, prompt, schema_str,
     )
     path = config.LLM_CACHE / f"{key}.json"
-    path.write_text(json.dumps({"raw_text": json.dumps(payload), "payload": payload},
-                               indent=2), encoding="utf-8")
+    # `source: synthetic` is the in-file marker pipeline.run_all uses to detect
+    # whether a real run actually called Gemini or silently fell through to
+    # the dev-only mock seeds.
+    path.write_text(json.dumps({
+        "source": "synthetic",
+        "raw_text": json.dumps(payload),
+        "payload": payload,
+    }, indent=2), encoding="utf-8")
 
 
 def seed_all() -> int:
