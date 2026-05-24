@@ -1,0 +1,17 @@
+{
+  "raw_text": "{\"reauthorization_requirements\": {\"value\": \"Continuation requests: Chart notes or medical record documentation of decreased body\", \"evidence\": \"Continuation requests: Chart notes or medical record documentation of decreased body\"}, \"specialist_types\": {\"value\": \"Dermatolog\", \"evidence\": \"dermatolog\"}, \"quantity_limits\": {\"value\": \"Quantity Limits\", \"evidence\": \"Quantity Limits\"}}",
+  "payload": {
+    "reauthorization_requirements": {
+      "value": "Continuation requests: Chart notes or medical record documentation of decreased body",
+      "evidence": "Continuation requests: Chart notes or medical record documentation of decreased body"
+    },
+    "specialist_types": {
+      "value": "Dermatolog",
+      "evidence": "dermatolog"
+    },
+    "quantity_limits": {
+      "value": "Quantity Limits",
+      "evidence": "Quantity Limits"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "raw_text": "{\"reauthorization_requirements\": {\"value\": \"NA\", \"evidence\": \"\"}, \"specialist_types\": {\"value\": \"Dermatolog\", \"evidence\": \"Dermatolog\"}, \"quantity_limits\": {\"value\": \"Quantity Limits:\", \"evidence\": \"Quantity Limits:\"}}",
+  "payload": {
+    "reauthorization_requirements": {
+      "value": "NA",
+      "evidence": ""
+    },
+    "specialist_types": {
+      "value": "Dermatolog",
+      "evidence": "Dermatolog"
+    },
+    "quantity_limits": {
+      "value": "Quantity Limits:",
+      "evidence": "Quantity Limits:"
+    }
+  }
+}

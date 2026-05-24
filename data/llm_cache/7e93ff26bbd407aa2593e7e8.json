@@ -1,0 +1,25 @@
+{
+  "raw_text": "{\"age\": {\"value\": \">=18\", \"evidence\": \"18 years\\n             \"}, \"tb_test_required\": {\"value\": \"No\", \"evidence\": \"\"}, \"initial_authorization_duration_months\": {\"value\": \"28\", \"evidence\": \"first 28 days\"}, \"reauthorization_duration_months\": {\"value\": \"Unspecified\", \"evidence\": \"\"}, \"reauthorization_required\": {\"value\": \"No\", \"evidence\": \"\"}}",
+  "payload": {
+    "age": {
+      "value": ">=18",
+      "evidence": "18 years\n             "
+    },
+    "tb_test_required": {
+      "value": "No",
+      "evidence": ""
+    },
+    "initial_authorization_duration_months": {
+      "value": "28",
+      "evidence": "first 28 days"
+    },
+    "reauthorization_duration_months": {
+      "value": "Unspecified",
+      "evidence": ""
+    },
+    "reauthorization_required": {
+      "value": "No",
+      "evidence": ""
+    }
+  }
+}

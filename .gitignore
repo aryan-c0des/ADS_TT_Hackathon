@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.DS_Store
+data/text/
+data/segments/
+data/evidence/
+output/diagnostics.json
+output/audit/
+arein_submission.zip
