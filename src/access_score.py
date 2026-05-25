@@ -181,6 +181,29 @@ def score_row(row_values: Dict[str, Any], brand: str) -> ScoreBreakdown:
     return ScoreBreakdown(score=score, contributions=contribs, notes=notes)
 
 
+# ---------------------------------------------------------------------------
+# Bucket labels
+# Organizers will qualitatively eval continuous 0–100 against a gold
+# standard, but they also bucket scores: 0–25, 26–50, 51–75, 76–100.
+# The CSV emits the integer; the audit card shows the bucket alongside.
+# ---------------------------------------------------------------------------
+BUCKET_LABELS = (
+    (25, "No access"),
+    (50, "Restricted"),
+    (75, "Preferred"),
+    (100, "Best access"),
+)
+
+
+def bucket_label(score: int) -> str:
+    """Return the bucket name for a 0–100 access score."""
+    s = max(0, min(100, int(score)))
+    for upper, label in BUCKET_LABELS:
+        if s <= upper:
+            return label
+    return BUCKET_LABELS[-1][1]
+
+
 def render_waterfall(breakdown: ScoreBreakdown) -> str:
     """Pretty-print the waterfall for audit cards / debugging."""
     lines = ["Access Score waterfall:"]

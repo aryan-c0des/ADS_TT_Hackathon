@@ -11,6 +11,12 @@ import json
 import sys
 from pathlib import Path
 
+# Windows consoles default to cp1252 and choke on glyphs like ✓ and ≥ that
+# appear in score waterfall notes. Force UTF-8 so the smoke test renders
+# correctly regardless of host locale.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -29,7 +35,8 @@ from src import (  # noqa: E402
 
 def prime_cache_for_row(filename: str, brand: str) -> None:
     """Pre-populate the LLM cache for a single row with plausible synthetic
-    responses so we can run the rest of the pipeline end-to-end."""
+    responses so we can run the rest of the pipeline end-to-end without a
+    Groq API key."""
     text = extract_text.load_text(filename)
     seg = segment_brand.segment(filename, brand, text)
     segment_text = seg.text
@@ -75,10 +82,10 @@ def prime_cache_for_row(filename: str, brand: str) -> None:
 
     # Build cache keys exactly the way llm_client computes them
     def _store(prompt: str, schema: dict, system: str, payload: dict,
-               temperature: float = config.GEMINI_TEMPERATURE_DEFAULT):
+               temperature: float = config.LLM_TEMPERATURE_DEFAULT):
         schema_str = json.dumps(schema, sort_keys=True)
         key = llm_client._hash(  # type: ignore[attr-defined]
-            config.GEMINI_MODEL, temperature, system, prompt, schema_str,
+            config.LLM_MODEL, temperature, system, prompt, schema_str,
         )
         path = config.LLM_CACHE / f"{key}.json"
         path.write_text(json.dumps({"raw_text": json.dumps(payload), "payload": payload},

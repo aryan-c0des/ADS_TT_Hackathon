@@ -114,13 +114,13 @@ def process_row(row: ingest.Row, *,
         evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
 
         if verbose:
-            print(f"  ✓ {row.filename} | {brand_canon} | score={breakdown.score}")
+            print(f"  [ok]   {row.filename} | {brand_canon} | score={breakdown.score}")
         return diag
     except Exception as exc:  # noqa: BLE001
         diag["error"] = f"{type(exc).__name__}: {exc}"
         diag["traceback"] = traceback.format_exc()
         if verbose:
-            print(f"  ✗ {row.filename} | {row.brand} | ERROR: {exc}")
+            print(f"  [fail] {row.filename} | {row.brand} | ERROR: {exc}")
         return diag
 
 
@@ -165,7 +165,7 @@ def run_all(*, run_self_consistency: bool = False, limit: int | None = None,
 def _warn_if_synthetic_cache_hit() -> None:
     """If any cache reads came from mock_seed-generated entries, warn loudly.
     Judges who skip the README's `rm -f data/llm_cache/*` step would
-    otherwise grade the synthetic seeds as a real Gemini run."""
+    otherwise grade the synthetic seeds as a real LLM run."""
     state = llm_client.counter_state()
     synth = state.get("synthetic_hits", 0)
     real = state.get("real_hits", 0)
@@ -174,9 +174,9 @@ def _warn_if_synthetic_cache_hit() -> None:
     print(
         "\n" + "!" * 72 + "\n"
         f"WARNING: {synth} cache reads came from synthetic seeds "
-        f"(real Gemini reads: {real}).\n"
+        f"(real LLM reads: {real}).\n"
         "result.csv may contain mocked values, not real LLM extraction.\n"
         "To re-run against the live LLM: `rm -f data/llm_cache/*` and ensure "
-        "GEMINI_API_KEY is set.\n"
+        "GROQ_API_KEY is set.\n"
         + "!" * 72
     )

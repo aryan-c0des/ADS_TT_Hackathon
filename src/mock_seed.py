@@ -1,10 +1,10 @@
 """
 Seed the LLM cache with plausible synthetic responses for ALL 79 rows so
-the pipeline can be exercised end-to-end without a Gemini API key.
+the pipeline can be exercised end-to-end without a Groq API key.
 
 This is used for:
   - the offline smoke test
-  - judge re-runs when their Gemini quota is depleted
+  - judge re-runs when their Groq quota is depleted
   - regression testing of step_graph, validate, access_score
 
 The seeded responses are deliberately conservative and uniform — they
@@ -134,14 +134,14 @@ def _seed_for_row(filename: str, brand: str) -> None:
 def _store(prompt: str, schema: dict, system: str, payload: dict,
            temperature: float | None = None) -> None:
     if temperature is None:
-        temperature = config.GEMINI_TEMPERATURE_DEFAULT
+        temperature = config.LLM_TEMPERATURE_DEFAULT
     schema_str = json.dumps(schema, sort_keys=True)
     key = llm_client._hash(  # type: ignore[attr-defined]
-        config.GEMINI_MODEL, temperature, system, prompt, schema_str,
+        config.LLM_MODEL, temperature, system, prompt, schema_str,
     )
     path = config.LLM_CACHE / f"{key}.json"
     # `source: synthetic` is the in-file marker pipeline.run_all uses to detect
-    # whether a real run actually called Gemini or silently fell through to
+    # whether a real run actually called the LLM or silently fell through to
     # the dev-only mock seeds.
     path.write_text(json.dumps({
         "source": "synthetic",

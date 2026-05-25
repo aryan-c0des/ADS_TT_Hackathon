@@ -23,6 +23,7 @@
   .score-line.pos { color: #34c759; }
   .score-line.neg { color: #ff3b30; }
   .score-final { font-size: 32px; font-weight: 700; color: #007aff; margin-top: 12px; }
+  .score-bucket { display: inline-block; margin-left: 10px; padding: 4px 12px; background: #007aff14; color: #007aff; border-radius: 999px; font-size: 13px; font-weight: 500; vertical-align: middle; }
   pre.snippet { background: #fff; border: 1px solid #e5e5ea; border-radius: 8px; padding: 12px; max-height: 320px; overflow: auto; font-size: 11px; color: #3a3a3c; }
   .flags { background: #ff950014; color: #b35900; padding: 10px 14px; border-radius: 8px; margin: 12px 0; font-size: 12px; }
   .step-trace { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #1c1c1e; background: #fff; border: 1px solid #e5e5ea; border-radius: 8px; padding: 12px; max-height: 240px; overflow: auto; }
@@ -39,7 +40,10 @@
         {{ "{:+d}".format(delta) }}  {{ label }}{% if note %} <span style="color:#86868b">({{ note }})</span>{% endif %}
       </div>
     {% endfor %}
-    <div class="score-final">{{ final_score }}</div>
+    <div class="score-final">
+      {{ final_score }}
+      <span class="score-bucket">{{ score_bucket }}</span>
+    </div>
   </div>
 
   {% if violations %}

@@ -39,15 +39,20 @@ for d in (TEXT_CACHE, SEGMENT_CACHE, LLM_CACHE, EVIDENCE_DIR, AUDIT_DIR, HOLDOUT
     d.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------
-# LLM
+# LLM — hackathon mandates Llama via Groq's free tier (was Gemini until the
+# spec changed mid-build). Cache key includes the model string, so changing
+# LLM_MODEL invalidates every existing entry in data/llm_cache/.
 # ---------------------------------------------------------------------------
-GEMINI_MODEL = "gemini-2.5-flash"
-GEMINI_MODEL_HEAVY = "gemini-2.5-pro"
-GEMINI_API_KEY_ENV = "GEMINI_API_KEY"
-GEMINI_TEMPERATURE_DEFAULT = 0.0
-GEMINI_TEMPERATURE_SECONDARY = 0.2
-GEMINI_MAX_OUTPUT_TOKENS = 4096
-GEMINI_MAX_RETRIES = 3
+LLM_PROVIDER = "groq"
+LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_MODEL_FAST = "llama-3.1-8b-instant"
+LLM_API_KEY_ENV = "GROQ_API_KEY"
+LLM_TEMPERATURE_DEFAULT = 0.0
+LLM_TEMPERATURE_SECONDARY = 0.2
+LLM_MAX_OUTPUT_TOKENS = 4096
+LLM_MAX_RETRIES = 3
+# Groq free tier is rate-limited per-minute (RPM + TPM), not per-day. Keep
+# this as a soft heads-up only; the real backpressure comes from 429s.
 DAILY_CALL_BUDGET = 1500
 
 # ---------------------------------------------------------------------------
@@ -197,11 +202,11 @@ LARGE_PDF_TEXT_THRESHOLD = 300_000  # >= this many chars → Medicaid mega-formu
 # Helpers
 # ---------------------------------------------------------------------------
 def get_api_key() -> str | None:
-    """Return the Gemini API key from env, or None if not set.
+    """Return the Groq API key from env, or None if not set.
 
     Pipeline tolerates a missing key for the local cache-replay path but
     will raise when an actual call is needed."""
-    return os.environ.get(GEMINI_API_KEY_ENV)
+    return os.environ.get(LLM_API_KEY_ENV)
 
 
 _SAFE_BRAND_RE = None  # lazy-init via re.compile so import order is harmless

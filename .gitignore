@@ -4,6 +4,7 @@ __pycache__/
 data/text/
 data/segments/
 data/evidence/
+data/llm_cache/
 output/diagnostics.json
 output/audit/
 arein_submission.zip

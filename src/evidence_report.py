@@ -15,7 +15,7 @@ from typing import Any, Dict, List
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import config
+from . import access_score, config
 
 
 _env = Environment(
@@ -82,6 +82,7 @@ def render_card(evidence_path: Path) -> Path:
 
     waterfall = [(w["label"], w["delta"], w.get("note", ""))
                  for w in data.get("score_waterfall", [])]
+    final_score = final_row.get("Access Score", 0)
     html = _env.get_template("audit_card.html").render(
         filename=data["filename"],
         brand=data["brand"],
@@ -91,7 +92,8 @@ def render_card(evidence_path: Path) -> Path:
         violations=data.get("violations", []),
         fields=fields,
         waterfall=waterfall,
-        final_score=final_row.get("Access Score", 0),
+        final_score=final_score,
+        score_bucket=access_score.bucket_label(final_score),
         brand_steps=final_row.get("Number of Steps through Brands", "NA"),
         generic_steps=final_row.get("Number of Steps through Generic", "NA"),
         brand_trace="\n".join(data.get("step_brand_trace", []) or ["(empty)"]),
