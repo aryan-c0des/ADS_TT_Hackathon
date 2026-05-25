@@ -81,6 +81,10 @@ def score_row(row_values: Dict[str, Any], brand: str) -> ScoreBreakdown:
     R = config.ACCESS_SCORE_RUBRIC
     weights = R["weights"]
     caps = R.get("caps", {})
+    thresholds = R.get("thresholds", {})
+    init_long = thresholds.get("initial_long_months", 12)
+    init_short = thresholds.get("initial_short_months", 3)
+    reauth_long = thresholds.get("reauth_long_months", 12)
 
     score = R["base"]
     contribs: List[Tuple[str, int, str]] = [("base (parity with FDA)", R["base"], "")]
@@ -146,14 +150,14 @@ def score_row(row_values: Dict[str, Any], brand: str) -> ScoreBreakdown:
     # Initial Authorization Duration
     init_dur = _parse_int_or_none(row_values.get("Initial Authorization Duration(in-months)"))
     if init_dur is not None:
-        if init_dur >= 12:
+        if init_dur >= init_long:
             delta = weights["initial_auth_long"]
             score += delta
-            contribs.append((f"initial auth {init_dur}mo (≥12)", delta, ""))
-        elif init_dur <= 3:
+            contribs.append((f"initial auth {init_dur}mo (≥{init_long})", delta, ""))
+        elif init_dur <= init_short:
             delta = weights["initial_auth_short"]
             score += delta
-            contribs.append((f"initial auth {init_dur}mo (≤3)", delta, ""))
+            contribs.append((f"initial auth {init_dur}mo (≤{init_short})", delta, ""))
 
     # Reauthorization
     reauth_req = str(row_values.get("Reauthorization Required", "")).strip().lower()
@@ -164,14 +168,14 @@ def score_row(row_values: Dict[str, Any], brand: str) -> ScoreBreakdown:
         contribs.append(("no reauthorization required", delta, ""))
     else:
         if reauth_dur is not None:
-            if reauth_dur >= 12:
+            if reauth_dur >= reauth_long:
                 delta = weights["reauth_long"]
                 score += delta
-                contribs.append((f"reauth {reauth_dur}mo (≥12)", delta, ""))
+                contribs.append((f"reauth {reauth_dur}mo (≥{reauth_long})", delta, ""))
             else:
                 delta = weights["reauth_short"]
                 score += delta
-                contribs.append((f"reauth {reauth_dur}mo (<12)", delta, ""))
+                contribs.append((f"reauth {reauth_dur}mo (<{reauth_long})", delta, ""))
 
     score = max(R["floor"], min(R["ceiling"], score))
     return ScoreBreakdown(score=score, contributions=contribs, notes=notes)

@@ -16,8 +16,6 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from . import config
-
 
 @dataclass
 class ValidationOutcome:
@@ -55,6 +53,12 @@ def _normalise_yes_no(value: str, default: str = "No") -> str:
 
 
 def _normalise_months(value: str) -> str:
+    """Coerce free-form duration strings to integer months.
+
+    Day-strings are ALWAYS converted to months (rounded). The old version
+    only converted when n >= 60, which silently left '30 days' as '30'
+    (interpreted as 30 months downstream). Year-strings are also converted.
+    """
     if not value:
         return "Unspecified"
     v = str(value).strip()
@@ -63,13 +67,17 @@ def _normalise_months(value: str) -> str:
     if v.lower() == "unspecified":
         return "Unspecified"
     m = re.search(r"(\d+)", v)
-    if m:
-        n = int(m.group(1))
-        # Convert obvious-day strings to months (>= 60 days → /30, rounded)
-        if n >= 60 and "day" in v.lower():
-            n = round(n / 30)
-        return str(n)
-    return "Unspecified"
+    if not m:
+        return "Unspecified"
+    n = int(m.group(1))
+    vl = v.lower()
+    if "day" in vl:
+        n = max(1, round(n / 30))
+    elif "year" in vl:
+        n = n * 12
+    elif "week" in vl:
+        n = max(1, round(n / 4.345))
+    return str(n)
 
 
 # ---------------------------------------------------------------------------

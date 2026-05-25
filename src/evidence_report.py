@@ -8,6 +8,7 @@ waterfall. Pure HTML + a Jinja template — no JS, no install.
 """
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 from typing import Any, Dict, List
@@ -112,10 +113,19 @@ def render_all() -> List[Path]:
 
 
 def render_index() -> Path:
-    """Tiny index.html listing every audit card for one-click browsing."""
+    """Tiny index.html listing every audit card for one-click browsing.
+
+    All filename / stem strings are HTML-escaped because they derive from
+    filenames built off LLM-canonical brand names and PDF stems. Even
+    though Path-safe characters limit the surface, this keeps the bypass
+    of Jinja autoescape from re-emerging silently."""
     items = []
     for p in sorted(config.AUDIT_DIR.glob("*.html")):
-        items.append(f'<li><a href="{p.name}">{p.stem}</a></li>')
+        if p.name == "index.html":
+            continue
+        name = html.escape(p.name)
+        stem = html.escape(p.stem)
+        items.append(f'<li><a href="{name}">{stem}</a></li>')
     body = (
         "<!doctype html><html><head><meta charset='utf-8'><title>Audit Index</title>"
         "<style>body{font-family:system-ui;padding:24px;}li{padding:4px 0}</style></head>"

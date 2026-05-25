@@ -163,15 +163,20 @@ ACCESS_SCORE_RUBRIC = {
         "tb_test":               -2,
         "specialist_required":   -4,
         "quantity_limited":      -4,
-        "initial_auth_long":     +5,   # >= 12 months
-        "initial_auth_short":    -3,   # <= 3 months
-        "reauth_long":           +3,   # >= 12 months
-        "reauth_short":          -5,   # < 12 months but present
+        "initial_auth_long":     +5,   # initial duration >= thresholds.initial_long_months
+        "initial_auth_short":    -3,   # initial duration <= thresholds.initial_short_months
+        "reauth_long":           +3,   # reauth duration >= thresholds.reauth_long_months
+        "reauth_short":          -5,   # reauth duration < thresholds.reauth_long_months
         "no_reauth_required":    +8,
     },
     "caps": {
         "step_per_brand_total":   -24,
         "step_per_generic_total": -15,
+    },
+    "thresholds": {
+        "initial_long_months":  12,
+        "initial_short_months":  3,
+        "reauth_long_months":   12,
     },
     "floor": 0,
     "ceiling": 100,
@@ -182,8 +187,10 @@ ACCESS_SCORE_RUBRIC = {
 # ---------------------------------------------------------------------------
 SEGMENT_MIN_CHARS = 800
 SEGMENT_MAX_CHARS = 15000
-SEGMENT_DEFAULT_RADIUS = 2000   # widen anchor by this many chars on either side
-SEGMENT_MED_SEVERE_RADIUS = 1500
+SEGMENT_DEFAULT_RADIUS = 2000   # mega-formulary anchor widening
+SEGMENT_MULTI_RADIUS = 3000     # multi-drug brand-occurrence widening
+SEGMENT_PSO_HEAD_CHARS = 1200   # head context kept before the PsO section
+SEGMENT_PSO_TAIL_CHARS = 800    # tail context kept after the PsO section
 LARGE_PDF_TEXT_THRESHOLD = 300_000  # >= this many chars → Medicaid mega-formulary path
 
 # ---------------------------------------------------------------------------
@@ -197,5 +204,17 @@ def get_api_key() -> str | None:
     return os.environ.get(GEMINI_API_KEY_ENV)
 
 
+_SAFE_BRAND_RE = None  # lazy-init via re.compile so import order is harmless
+
+
 def canonical_brand(brand: str) -> str:
-    return BRAND_CANONICAL.get(brand.lower().strip(), brand.upper().strip())
+    """Return the canonical brand string used in result.csv and as a file-
+    name component. Strips any character that isn't safe for a filename so
+    a malformed Submissions sheet can't construct a path-traversal payload
+    (e.g., Brand="../etc/passwd") via the f-string in pipeline.process_row."""
+    import re
+    global _SAFE_BRAND_RE
+    if _SAFE_BRAND_RE is None:
+        _SAFE_BRAND_RE = re.compile(r"[^A-Z0-9_-]")
+    canon = BRAND_CANONICAL.get(brand.lower().strip(), brand.upper().strip())
+    return _SAFE_BRAND_RE.sub("", canon)

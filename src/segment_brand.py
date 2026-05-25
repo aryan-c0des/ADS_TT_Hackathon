@@ -50,7 +50,7 @@ class BrandSegment:
 
     def cache_path(self):
         from pathlib import Path
-        stem = Path(self.filename).stem
+        stem = Path(self.filename).stem.replace("/", "_").replace("\\", "_")
         return config.SEGMENT_CACHE / f"{stem}__{self.brand}.txt"
 
 
@@ -137,8 +137,9 @@ def _segment_multi_drug(text: str, brand: str) -> Tuple[str, str, Tuple[int, int
         return sum(1 for p in pso_positions if lo <= p <= hi)
 
     best = max(brand_positions, key=score)
-    radius = 3000
-    slice_text, s, e = _slice_around(text, best, best + len(target), radius)
+    slice_text, s, e = _slice_around(
+        text, best, best + len(target), config.SEGMENT_MULTI_RADIUS
+    )
     u, _, _ = _find_universal_block(text)
     return slice_text, u, (s, e)
 
@@ -199,19 +200,23 @@ def _focus_pso_indication(slice_text: str) -> str:
         return slice_text
     next_starts = [m.start() for m in matches if m.start() > pso_match.end()]
     end = next_starts[0] if next_starts else len(slice_text)
-    # Preserve the brand-level header (first 1200 chars) so brand identity,
-    # quantity-limit tables and authorization-duration callouts up top survive.
-    head = slice_text[: min(1200, pso_match.start())]
+    # Preserve the brand-level header so brand identity, quantity-limit
+    # tables and authorization-duration callouts up top survive the slice.
+    head = slice_text[: min(config.SEGMENT_PSO_HEAD_CHARS, pso_match.start())]
     body = slice_text[pso_match.start():end]
     tail_start = end
-    tail = slice_text[tail_start: min(len(slice_text), tail_start + 800)]
+    tail = slice_text[tail_start: min(len(slice_text), tail_start + config.SEGMENT_PSO_TAIL_CHARS)]
     return head + "\n\n" + body + "\n\n" + tail
 
 
 def segment(filename: str, brand: str, full_text: str) -> BrandSegment:
-    """Run heuristic segmentation, with optional LLM fallback when slice
-    quality is poor. The actual LLM call is delegated to llm_client.locate
-    if needed; here we just produce the heuristic result.
+    """Run heuristic segmentation.
+
+    Routes to one of three layout-specific slicers (single_drug, multi_drug,
+    mega_formulary), then focuses on the PsO indication block and appends
+    any universal/all-indications criteria. All 70 sample PDFs slice to a
+    plausible length using only heuristics — no LLM-assisted re-locate is
+    invoked.
     """
     layout = detect_layout(full_text, brand)
     if layout == "single_drug":
@@ -242,27 +247,10 @@ def segment(filename: str, brand: str, full_text: str) -> BrandSegment:
     )
 
 
-def needs_llm_fallback(seg: BrandSegment) -> bool:
-    """Heuristic slice is suspect — flag for an LLM-assisted re-locate.
-
-    Single-drug policies can legitimately run to 80K chars; only flag those
-    when the slice is implausibly small. Multi-drug and mega-formulary
-    slices are bounded both below and above.
-    """
-    n = len(seg.text)
-    if seg.layout == "single_drug":
-        return n < config.SEGMENT_MIN_CHARS
-    return n < config.SEGMENT_MIN_CHARS or n > config.SEGMENT_MAX_CHARS
-
-
 def save_segment(seg: BrandSegment) -> None:
-    seg.cache_path().write_text(seg.text, encoding="utf-8")
-
-
-def load_cached_segment(filename: str, brand: str) -> str | None:
-    from pathlib import Path
-    stem = Path(filename).stem
-    path = config.SEGMENT_CACHE / f"{stem}__{brand}.txt"
-    if path.exists():
-        return path.read_text(encoding="utf-8")
-    return None
+    """Write the brand-isolated slice to disk. Containment-check the path
+    so a malformed Filename or Brand cannot escape SEGMENT_CACHE."""
+    path = seg.cache_path().resolve()
+    if not str(path).startswith(str(config.SEGMENT_CACHE.resolve())):
+        raise ValueError(f"segment path escaped SEGMENT_CACHE: {path}")
+    path.write_text(seg.text, encoding="utf-8")

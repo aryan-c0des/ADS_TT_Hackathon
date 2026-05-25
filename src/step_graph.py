@@ -264,5 +264,3 @@ def count_steps(step_graph: Dict[str, Any]) -> CountResult:
     )
 
 
-def trace_to_str(traces: List[str]) -> str:
-    return "\n".join(traces) if traces else "(empty)"

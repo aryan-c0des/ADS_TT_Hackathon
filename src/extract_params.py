@@ -11,9 +11,8 @@ example so the LLM has a concrete few-shot for the AND/OR step logic.
 """
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 from . import config, llm_client
 
@@ -289,7 +288,13 @@ def _prompt_text_fields(brand: str, segment_text: str) -> str:
 
 def extract_row(filename: str, brand: str, segment_text: str,
                 *, run_self_consistency: bool = False) -> ExtractedRow:
-    """Run all three prompts for one (Filename, Brand) row."""
+    """Run all three prompts for one (Filename, Brand) row.
+
+    When `run_self_consistency=True`, Prompt B is also executed at a higher
+    temperature and the second payload is stored in `diagnostics['step_b2_payload']`
+    for offline comparison. We do NOT automatically reconcile the two — that
+    is left to a downstream review step so the audit trail is preserved.
+    """
     out = ExtractedRow(filename=filename, brand=brand)
 
     # Prompt A — scalars

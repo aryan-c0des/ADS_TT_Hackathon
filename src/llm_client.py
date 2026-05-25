@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -133,6 +132,7 @@ def call_json(prompt: str,
             )
             resp = m.generate_content(prompt)
             _call_counter["calls"] += 1
+            _warn_on_budget()
             text = (resp.text or "").strip()
             payload = json.loads(text)
             _write_cache(prompt_hash, text, payload)
@@ -150,68 +150,29 @@ def call_json(prompt: str,
     raise RuntimeError(f"Gemini call failed after retries: {last_err}")
 
 
-def call_text(prompt: str, *, system: str = "",
-              temperature: float = config.GEMINI_TEMPERATURE_DEFAULT,
-              model: str = config.GEMINI_MODEL,
-              force: bool = False) -> LLMResult:
-    """Plain-text completion (used for one-off LLM-judge or anchor location)."""
-    prompt_hash = _hash(model, temperature, system, prompt, "<text>")
-    cached = _read_cache(prompt_hash)
-    if cached and not force:
-        return LLMResult(
-            payload={"text": cached.get("raw_text", "")},
-            cache_hit=True,
-            raw_text=cached.get("raw_text", ""),
-            prompt_hash=prompt_hash, model=model,
-        )
-    _ensure_configured(model)
-    cfg = {
-        "temperature": temperature,
-        "max_output_tokens": config.GEMINI_MAX_OUTPUT_TOKENS,
-    }
-    m = genai.GenerativeModel(  # type: ignore[attr-defined]
-        model_name=model,
-        system_instruction=system or None,
-        generation_config=cfg,
-    )
-    resp = m.generate_content(prompt)
-    _call_counter["calls"] += 1
-    text = (resp.text or "").strip()
-    _write_cache(prompt_hash, text, {"text": text})
-    return LLMResult(
-        payload={"text": text}, cache_hit=False, raw_text=text,
-        prompt_hash=prompt_hash, model=model,
-    )
-
-
-def locate_anchors(filename: str, brand: str, text: str) -> dict:
-    """Ask Gemini for (start_anchor, end_anchor) substrings that bracket
-    the brand's section in the policy. Used by segment_brand as a fallback."""
-    schema = {
-        "type": "object",
-        "properties": {
-            "start_anchor": {"type": "string"},
-            "end_anchor":   {"type": "string"},
-            "confidence":   {"type": "number"},
-        },
-        "required": ["start_anchor", "end_anchor"],
-    }
-    system = (
-        "You are a clinical document analyst. Given a Prior Authorization policy, "
-        "you return two short verbatim substrings that mark the start and end of "
-        "the section that governs the requested brand for plaque psoriasis."
-    )
-    prompt = (
-        f"Brand: {brand}\nFilename: {filename}\n\n"
-        "Return two 15-30 character verbatim substrings from the policy. "
-        "start_anchor = the first words of the section. end_anchor = the first "
-        "words of whatever comes AFTER the section. Both must be exact substrings "
-        "(copy-pasteable). If the section runs to the end of the policy, return "
-        'end_anchor as the empty string "".\n\nPOLICY TEXT:\n'
-        + text[:60_000]
-    )
-    return call_json(prompt, schema, system=system).payload
-
-
 def counter_state() -> dict:
+    """Read the in-process counter — calls made, errors hit, and the
+    real-vs-synthetic cache-hit split. pipeline.run_all surfaces this."""
     return dict(_call_counter)
+
+
+_budget_warned = {"80": False, "100": False}
+
+
+def _warn_on_budget() -> None:
+    """Surface a one-shot warning at 80% and 100% of the daily call budget
+    so the user knows BEFORE the next call returns 429 RESOURCE_EXHAUSTED.
+    Quota counters reset at UTC midnight on Gemini free tier."""
+    n = _call_counter["calls"]
+    if n >= config.DAILY_CALL_BUDGET and not _budget_warned["100"]:
+        _budget_warned["100"] = True
+        print(
+            f"[llm_client] WARNING: hit DAILY_CALL_BUDGET={config.DAILY_CALL_BUDGET}. "
+            "Further calls likely to return 429 RESOURCE_EXHAUSTED until UTC midnight."
+        )
+    elif n >= int(config.DAILY_CALL_BUDGET * 0.8) and not _budget_warned["80"]:
+        _budget_warned["80"] = True
+        print(
+            f"[llm_client] heads up: {n} calls made ({n*100//config.DAILY_CALL_BUDGET}% "
+            f"of DAILY_CALL_BUDGET={config.DAILY_CALL_BUDGET})."
+        )

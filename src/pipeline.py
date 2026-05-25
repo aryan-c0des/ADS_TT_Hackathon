@@ -91,7 +91,8 @@ def process_row(row: ingest.Row, *,
                                    validation.fixed, breakdown.score)
         diag["csv_row"] = csv_row
 
-        # Persist evidence sidecar
+        # Persist evidence sidecar. Resolve + containment-check so a
+        # malformed Filename or Brand can never escape EVIDENCE_DIR.
         evidence = {
             "filename": row.filename,
             "brand": brand_canon,
@@ -106,7 +107,10 @@ def process_row(row: ingest.Row, *,
             "score_waterfall": diag["score_waterfall"],
             "final_row": csv_row,
         }
-        evidence_path = config.EVIDENCE_DIR / f"{Path(row.filename).stem}__{brand_canon}.json"
+        safe_stem = Path(row.filename).stem.replace("/", "_").replace("\\", "_")
+        evidence_path = (config.EVIDENCE_DIR / f"{safe_stem}__{brand_canon}.json").resolve()
+        if not str(evidence_path).startswith(str(config.EVIDENCE_DIR.resolve())):
+            raise ValueError(f"evidence path escaped EVIDENCE_DIR: {evidence_path}")
         evidence_path.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
 
         if verbose:

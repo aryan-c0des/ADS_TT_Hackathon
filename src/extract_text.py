@@ -65,11 +65,3 @@ def load_text(filename: str) -> str:
     return cache_path.read_text(encoding="utf-8", errors="replace")
 
 
-def text_stats(filename: str) -> dict:
-    text = load_text(filename)
-    return {
-        "filename": filename,
-        "chars": len(text),
-        "lines": text.count("\n"),
-        "is_large": len(text) >= config.LARGE_PDF_TEXT_THRESHOLD,
-    }
