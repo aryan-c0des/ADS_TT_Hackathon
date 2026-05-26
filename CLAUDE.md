@@ -16,7 +16,7 @@ src/
 ├── ingest.py          # load PA_Business_Rules.xlsx + list 70 PDFs
 ├── extract_text.py    # pdftotext wrapper → data/text/
 ├── segment_brand.py   # 3-layout brand-section isolation
-├── llm_client.py      # Gemini wrapper, SHA-keyed disk cache
+├── llm_client.py      # Groq/Llama wrapper, SHA-keyed disk cache
 ├── extract_params.py  # 3 grouped prompts (Scalars / StepTherapy / TextFields)
 ├── step_graph.py      # deterministic step counter — HIGHEST LEVERAGE FILE
 ├── validate.py        # business-rule cross-checks + auto-fixes
@@ -56,7 +56,7 @@ python3 package_submission.py
 To run with the real LLM (not the synthetic cache):
 ```bash
 rm -f data/llm_cache/*
-export GEMINI_API_KEY="..."
+export GROQ_API_KEY="..."
 python3 -c "from src import pipeline; pipeline.run_all()"
 ```
 
@@ -74,7 +74,7 @@ If you touch any of these, `tests/test_step_counting.py` must still pass — tho
 
 ### LLM client (`src/llm_client.py`)
 - Cache key: `SHA256(model + temperature + system + prompt + schema)`. Don't change the hash inputs without invalidating the existing cache and re-running everything.
-- Response is always JSON (Gemini `responseSchema`). The `payload` field in the cache file is the parsed dict.
+- Response is always JSON (Groq `response_format={"type": "json_object"}` + schema injected into the system prompt — Llama has no native schema enforcement, unlike the old Gemini `responseSchema`). The `payload` field in the cache file is the parsed dict.
 - Default temperature is 0.0 (deterministic). Prompt B can run a second pass at 0.2 for self-consistency (`run_self_consistency=True` in pipeline).
 
 ### Submission CSV (`config.SUBMISSION_COLUMNS`)
@@ -90,7 +90,7 @@ If you touch any of these, `tests/test_step_counting.py` must still pass — tho
 
 ## Things to watch
 
-- **Synthetic cache shadows real LLM calls.** `data/llm_cache/` ships pre-populated with `mock_seed.py` outputs. Clearing it (`rm -f data/llm_cache/*`) is the first step before a real Gemini run.
+- **Synthetic cache shadows real LLM calls.** `data/llm_cache/` ships pre-populated with `mock_seed.py` outputs. Clearing it (`rm -f data/llm_cache/*`) is the first step before a real Groq/Llama run.
 - **All paths in `config.py` are absolute via `pathlib.Path(__file__).resolve()`.** Don't hard-code working directory assumptions.
 - **`pdftotext` (poppler) must be on PATH.** Colab: `!apt-get install -y poppler-utils`. macOS: `brew install poppler`.
 - **Brand canonicalization** happens in `config.canonical_brand()`. Use it — don't compare brand strings raw.
@@ -106,13 +106,13 @@ Read `NEXTSTEPS.md` at the project root and present its contents. That file owns
 - Bug in step counting: open `src/step_graph.py`, write a failing test in `tests/test_step_counting.py` first, then fix.
 - Adjusting Access Score weights: edit `config.ACCESS_SCORE_RUBRIC` only. Don't hard-code numbers in `access_score.py`.
 - Adding a new parameter: this is invasive — it touches `config.SUBMISSION_COLUMNS`, one of the three prompt schemas in `extract_params.py`, `validate.py`, and the audit card template. Ask the user before doing it.
-- "Stop using the synthetic cache" → `rm -f data/llm_cache/*` + ensure `GEMINI_API_KEY` is set.
+- "Stop using the synthetic cache" → `rm -f data/llm_cache/*` + ensure `GROQ_API_KEY` is set.
 - "Run on a single row to debug" → `from src import pipeline, ingest; pipeline.process_row(ingest.load_submissions()[N], verbose=True)`.
 
 ## Don't
 
 - Don't add a Streamlit dashboard. The user explicitly chose HTML audit cards (zero-install for judges).
-- Don't switch the LLM. The hackathon mandates Gemini 2.5 free tier.
+- Don't switch the LLM. The hackathon mandates Llama-3.3-70B-versatile (Groq free tier). Llama-3.1-8B-instant is the only allowed fallback.
 - Don't OCR the PDFs — all 70 are text-extractable; OCR is dead weight.
 - Don't extend `mock_seed.py` to look smart. It's a development scaffold; the README is honest about what it is. Improving it risks the user confusing synthetic output with real extraction.
 - Don't remove the per-cell evidence sidecar or the audit cards — they ARE the standout interpretability layer.
@@ -125,4 +125,4 @@ Read `NEXTSTEPS.md` at the project root and present its contents. That file owns
 - 79 audit cards + index render
 - Heatmap + score distribution PNGs render
 - Submission ZIP: ~727 KB
-- Outstanding user work: (1) set `GEMINI_API_KEY` + clear cache + re-run, (2) hand-label 8 rows in `holdout/holdout_labels.csv`, (3) optionally tune rubric weights.
+- Outstanding user work: (1) set `GROQ_API_KEY` + clear cache + re-run, (2) hand-label 8 rows in `holdout/holdout_labels.csv`, (3) optionally tune rubric weights.

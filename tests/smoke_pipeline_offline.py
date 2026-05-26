@@ -1,7 +1,7 @@
 """
 Offline smoke test: prime the LLM cache with a synthetic response for one
 (Filename, Brand) row and verify the pipeline produces a valid CSV row,
-evidence sidecar, and audit card without needing a Gemini API key.
+evidence sidecar, and audit card without needing a Groq API key.
 
 Run with:  python3 tests/smoke_pipeline_offline.py
 """
