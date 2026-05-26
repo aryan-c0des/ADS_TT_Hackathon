@@ -1834,7 +1834,11 @@ def validate(extracted, count_result) -> ValidationOutcome:
         o.fixed["Reauthorization Requirements Documented in Policy"] = "NA"
 
     # ---- Specialist ----
+    # Title-case for consistency across rows — the LLM is inconsistent here
+    # ("dermatologist" vs "Dermatologist" depending on the policy's phrasing).
     spec_raw = ((tf.get("specialist_types") or {}).get("value", "") or "").strip()
+    if spec_raw and spec_raw.upper() not in {"NA", "N/A", "NONE"}:
+        spec_raw = ", ".join(s.strip().title() for s in spec_raw.split(",") if s.strip())
     o.fixed["Specialist Types"] = spec_raw or "NA"
 
     # ---- Quantity Limits ----
