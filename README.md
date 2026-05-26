@@ -6,6 +6,22 @@ Built for the H1'26 hackathon. The design priority is **auditability** over raw 
 
 ---
 
+## Model declaration
+
+**This submission uses a single model: `llama-3.3-70b-versatile` (via Groq free tier).**
+
+All three LLM extraction prompts are routed to this model:
+
+| Pipeline step | Model |
+|---|---|
+| Prompt A — Scalars (Age, TB test, auth durations) | llama-3.3-70b-versatile |
+| Prompt B — Step Therapy graph extraction | llama-3.3-70b-versatile |
+| Prompt C — Text fields (Reauth criteria, Specialist, Quantity Limits) | llama-3.3-70b-versatile |
+
+All other pipeline steps (step counting, validation, access scoring) are deterministic Python — no model involved.
+
+---
+
 ## Quick start
 
 ```bash
@@ -13,8 +29,8 @@ Built for the H1'26 hackathon. The design priority is **auditability** over raw 
 pip install -r requirements.txt
 apt-get install -y poppler-utils    # needs pdftotext on the PATH
 
-# 2. Set the API key
-export GEMINI_API_KEY="..."
+# 2. Set the API key (Groq free tier — console.groq.com)
+export GROQ_API_KEY="..."
 
 # 3. IMPORTANT: clear synthetic cache before the first real run
 rm -f data/llm_cache/*
@@ -23,7 +39,7 @@ rm -f data/llm_cache/*
 jupyter notebook notebook.ipynb
 ```
 
-> **Why the cache clear?** The repo ships with a *synthetic-response* cache (built by `src/mock_seed.py`) so the pipeline can run offline for development and demos. Once you set a real `GEMINI_API_KEY`, you want fresh LLM calls — clearing `data/llm_cache/` forces them. Subsequent runs are cached again and free.
+> **Why the cache clear?** The repo ships with a *synthetic-response* cache (built by `src/mock_seed.py`) so the pipeline can run offline for development and demos. Once you set a real `GROQ_API_KEY`, you want fresh LLM calls — clearing `data/llm_cache/` forces them. Subsequent runs are cached again and free.
 
 Or run headless from a shell:
 
@@ -47,7 +63,7 @@ Outputs land in `output/`:
 ## Pipeline shape
 
 ```
-70 PDFs ──► pdftotext ──► brand-section slice ──► Gemini (3 grouped prompts)
+70 PDFs ──► pdftotext ──► brand-section slice ──► Llama-3.3-70b (3 grouped prompts, Groq)
                                                        │
                                                        ▼
                                           structured JSON (step_graph, scalars)
@@ -61,8 +77,8 @@ Outputs land in `output/`:
 
 ### Why this shape
 
-- **Text-first, multimodal as fallback.** All 70 PDFs in the sample corpus extract cleanly with `pdftotext -layout` (no OCR needed). Sending the whole PDF to Gemini multimodally would burn quota; the text-first path keeps each prompt under ~3K input tokens.
-- **Three grouped prompts (not 12), not one monolithic.** Prompt A returns 5 scalars, Prompt B returns the step-therapy text and a structured `step_graph`, Prompt C returns three long-form text fields. This stays small enough to JSON-validate every response yet large enough that we only burn 3 calls per row (237 total — well under the 1500/day Gemini Flash free quota).
+- **Text-first, no OCR.** All 70 PDFs in the sample corpus extract cleanly with `pdftotext -layout`. The text-first path keeps each prompt under ~3K input tokens and avoids multimodal complexity entirely.
+- **Three grouped prompts (not 12), not one monolithic.** Prompt A returns 5 scalars, Prompt B returns the step-therapy text and a structured `step_graph`, Prompt C returns three long-form text fields. This stays small enough to JSON-validate every response yet large enough that we only burn 3 calls per row (237 total), well within Groq's free-tier rate limits.
 - **LLM builds the step graph, Python counts.** Asking the LLM for an integer step count is brittle. Asking it to decompose the step therapy into an `AND/OR/LEAF` graph and then counting deterministically in Python is auditable: the trace prints each leaf, each OR-path choice, and the final sum.
 - **Whitelist re-classification.** The PsO Brands sheet provides a 35-drug ground-truth split (branded biologic vs generic systemic vs topical). When the LLM mis-labels a drug class, `step_graph.reconcile_class` overrides via whitelist match — see `tests/test_step_counting.py::test_branded_step_counting_via_whitelist`.
 
@@ -133,7 +149,7 @@ The weights live in `src/config.py:ACCESS_SCORE_RUBRIC` — judges can re-fit th
 
 ## Reproducibility
 
-- **LLM call caching**: every Gemini call is keyed on `SHA256(model + temperature + system + prompt + schema)` and written to `data/llm_cache/`. The cache ships in the submission ZIP, so a fresh judge environment with no API key can still reproduce `result.csv` (provided we hit the cache).
+- **LLM call caching**: every Groq call is keyed on `SHA256(model + temperature + system + prompt + schema)` and written to `data/llm_cache/`. The cache ships in the submission ZIP, so a fresh judge environment with no API key can still reproduce `result.csv` (provided we hit the cache).
 - **Determinism after LLM**: step counting, validation, and access scoring are pure functions — no randomness, no time/network dependencies.
 - **Smoke test cell** at top of the notebook processes a single row in ~10 seconds (cached) — fails fast if the env is broken.
 
@@ -158,7 +174,7 @@ arein_hackathon/
 │   ├── ingest.py                # load xlsx sheets, list PDFs
 │   ├── extract_text.py          # pdftotext wrapper, cached
 │   ├── segment_brand.py         # 3-layout brand-section isolation
-│   ├── llm_client.py            # Gemini wrapper with caching + retries
+│   ├── llm_client.py            # Groq/Llama wrapper with caching + retries
 │   ├── extract_params.py        # 3 grouped prompts + few-shot
 │   ├── step_graph.py            # deterministic step counter (the hard part)
 │   ├── validate.py              # business-rule cross-checks
@@ -186,7 +202,7 @@ arein_hackathon/
 
 - **8-row hold-out, not blind**: I hand-labelled 8 diverse rows to self-measure accuracy. That's a *self-graded* metric, not an independent eval.
 - **Access Score weights are a hypothesis**: tuned against the 440-row silver-label table in `Additional Extracted Data`, not the actual hackathon gold standard.
-- **Multi-modal fallback not exercised** on the sample corpus because all 70 PDFs were OCR-clean. If judges hand us scanned PDFs, the pipeline would need to switch to Gemini multimodal — the path is wired in `llm_client.py` but untested at scale.
+- **Multi-modal fallback not exercised** on the sample corpus because all 70 PDFs were OCR-clean. If judges hand us scanned PDFs, the pipeline would need an OCR pre-processing step before text extraction — not implemented.
 - **Self-consistency pass** (running Prompt B at two temperatures and tie-breaking on disagreement) is implemented but disabled by default to stay within the daily call budget; enable with `pipeline.run_all(run_self_consistency=True)`.
 
 ---

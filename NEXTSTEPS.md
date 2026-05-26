@@ -4,10 +4,10 @@ The end-to-end pipeline is built and verified. These are the remaining tasks bef
 
 ---
 
-### Step 1 — Get a Gemini API key
+### Step 1 — Get a Groq API key
 
-1. Go to **https://aistudio.google.com/apikey** → "Create API key" → copy it.
-2. Free tier on Gemini 2.5 Flash is 1500 calls/day — plenty for the 237-call budget.
+1. Go to **https://console.groq.com** → sign up → "API Keys" → create and copy it.
+2. Groq free tier is rate-limited per-minute (RPM/TPM), not per-day — 237 calls spread over a run is well within limits.
 
 ### Step 2 — Choose your run environment
 
@@ -19,8 +19,8 @@ The hackathon rules require Kaggle or Colab free tier. Recommended: **Google Col
 In Colab, first cell:
 ```python
 !apt-get install -y poppler-utils
-!pip install -q google-generativeai pandas openpyxl jinja2 matplotlib
-import os; os.environ['GEMINI_API_KEY'] = 'paste-your-key-here'
+!pip install -q groq pandas openpyxl jinja2 matplotlib
+import os; os.environ['GROQ_API_KEY'] = 'paste-your-key-here'
 ```
 
 ### Step 3 — Run the real pipeline
@@ -31,7 +31,7 @@ rm -f data/llm_cache/*          # CRITICAL — clear synthetic seeds first
 python3 -c "from src import pipeline; pipeline.run_all(verbose=True)"
 ```
 
-This will make ~237 real Gemini calls (~5–10 minutes wallclock). Watch the output for `ERROR` lines on any rows. The pipeline now prints a loud warning at the end if any cache reads were synthetic — that confirms you actually called Gemini.
+This will make ~237 real Groq/Llama calls (~5–10 minutes wallclock). Watch the output for `ERROR` lines on any rows. The pipeline prints a loud warning at the end if any cache reads were synthetic — that confirms you actually called Groq.
 
 ### Step 4 — Eyeball-check 5 audit cards
 
@@ -90,23 +90,45 @@ If TREMFYA / STELARA medians look implausibly low (e.g., < 30) or high (> 70), t
 from src import pipeline; pipeline.run_all()   # cached LLM, only re-scores
 ```
 
-### Step 9 — Final fresh-env smoke test
+### Step 9 — Regenerate `solution.py` (the single-file code deliverable)
+
+The hackathon now requires the code to be one `.py` file. The modular `src/` tree stays as the development surface; `build_single_file.py` concatenates it into `solution.py` which is what judges run.
+
+```bash
+python3 build_single_file.py
+```
+
+Quick sanity check that the generated file works end-to-end (1 row, cached):
+```bash
+python3 tests/smoke_solution_single_file.py
+```
+
+Should end with `SOLUTION.PY END-TO-END: OK`. If you've edited anything under `src/`, `templates/`, or `extract_params.py` prompts, **re-run this step** — `solution.py` is generated, not hand-edited.
+
+### Step 10 — Final fresh-env smoke test
 
 In a brand-new Colab notebook:
-1. Upload the ZIP
-2. `!unzip arein_submission.zip`
-3. Run all cells in `notebook.ipynb`
-4. Confirm `output/result.csv` regenerates and matches your last good run
+1. Upload the ZIP (or just `solution.py` if the portal only accepts a single file)
+2. `!unzip arein_submission.zip` (skip if you're uploading just `solution.py`)
+3. `!apt-get install -y poppler-utils && pip install -q groq pandas openpyxl jinja2 matplotlib`
+4. Set `GROQ_API_KEY` and run `import solution; solution.run_all()` — OR run all cells in `notebook.ipynb`
+5. Confirm `output/result.csv` regenerates and matches your last good run
 
-If anything breaks in fresh Colab — fix `requirements.txt` or `notebook.ipynb` until it doesn't.
+If anything breaks in fresh Colab — fix `requirements.txt`, the notebook, or `build_single_file.py` until it doesn't.
 
-### Step 10 — Submit
+### Step 11 — Submit
 
 ```bash
 python3 package_submission.py
 ```
 
-Upload `arein_submission.zip` to the hackathon portal **before 9 AM IST, 1 June 2026**. Keep a screenshot of the submission confirmation.
+This regenerates `solution.py` from `src/` automatically (so the bundled single-file is never stale) and writes `arein_submission.zip`. **Inside the ZIP, `solution.py` at the root is the code deliverable; the modular `src/` tree is bundled alongside as a readable reference.**
+
+Confirm with the portal whether they want:
+- just `solution.py` (single-file only), or
+- `arein_submission.zip` (single-file + supporting artifacts: result.csv, audit cards, heatmap)
+
+Upload before **9 AM IST, 1 June 2026**. Keep a screenshot of the submission confirmation.
 
 ---
 
@@ -115,11 +137,13 @@ Upload `arein_submission.zip` to the hackathon portal **before 9 AM IST, 1 June 
 | Symptom | Fix |
 |---|---|
 | `pdftotext: command not found` | `!apt-get install -y poppler-utils` (Colab) or `brew install poppler` (mac) |
-| Gemini returns `429 RESOURCE_EXHAUSTED` | You hit the 1500/day cap. Wait until UTC midnight or use a second Google account key. |
+| Groq returns `429 Too Many Requests` | Hit the per-minute rate limit. The retry loop backs off automatically — just wait a minute and re-run. |
 | Step counts seem wrong on most rows | Open one bad audit card → look at the step_graph JSON → likely the LLM is producing the wrong structure. Tighten the few-shot in `extract_params.SYSTEM_STEP_THERAPY`. |
 | Holdout accuracy below 50% on Age | Probably "FDA labelled age" misuse. Check what your hand-labels look like vs predictions. |
 | Multi-brand PDFs both extract the same values | `segment_brand.py` failed to isolate. Spot-check the cached slice in `data/segments/<filename>__<brand>.txt`. |
-| Pipeline run finishes with "WARNING: N cache reads came from synthetic seeds" | You forgot to clear `data/llm_cache/` before running. Delete the cache, set `GEMINI_API_KEY`, and re-run. |
+| Pipeline run finishes with "WARNING: N cache reads came from synthetic seeds" | You forgot to clear `data/llm_cache/` before running. Delete the cache, set `GROQ_API_KEY`, and re-run. |
+| `import solution` raises a syntax error | `solution.py` is stale or corrupted. Regenerate with `python3 build_single_file.py` — never hand-edit it. |
+| `solution.py` and the modular `src/` tree disagree on output | You forgot to regenerate. `package_submission.py` rebuilds automatically; for manual workflows run `python3 build_single_file.py` after any `src/` change. |
 
 ---
 
