@@ -1069,6 +1069,7 @@ not under any OR ancestor.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
@@ -1077,10 +1078,23 @@ from typing import Any, Dict, List
 # ---------------------------------------------------------------------------
 # Class normalization & whitelist re-classification
 # ---------------------------------------------------------------------------
-_BIOLOGIC_TOKENS = {b.lower() for b in config.BRAND_WHITELIST_BIOLOGIC}
-_GENERIC_TOKENS = {b.lower() for b in config.BRAND_WHITELIST_GENERIC}
-_TOPICAL_TOKENS = config.TOPICAL_KEYWORDS
-_PHOTOTHERAPY_TOKENS = config.PHOTOTHERAPY_KEYWORDS
+# Word-boundary regex match instead of naive substring containment. Two
+# reasons the bare `in` was wrong:
+#   1. "tar" (a coal-tar TOPICAL keyword) is a substring of "targeted",
+#      "started", etc. — false positives that flipped biologic leaves to
+#      TOPICAL.
+#   2. CLAUDE.md rule #4 says the brand whitelist is the source of truth.
+#      So we check biologic/generic FIRST, then fall back to TOPICAL /
+#      PHOTOTHERAPY keyword heuristics.
+def _make_token_re(tokens):
+    parts = sorted({t.lower() for t in tokens}, key=len, reverse=True)
+    return re.compile(r"\b(?:" + "|".join(re.escape(t) for t in parts) + r")\b")
+
+
+_BIOLOGIC_RE = _make_token_re(config.BRAND_WHITELIST_BIOLOGIC)
+_GENERIC_RE = _make_token_re(config.BRAND_WHITELIST_GENERIC)
+_TOPICAL_RE = _make_token_re(config.TOPICAL_KEYWORDS)
+_PHOTOTHERAPY_RE = _make_token_re(config.PHOTOTHERAPY_KEYWORDS)
 
 
 CLASSES = ("BRANDED_BIOLOGIC", "GENERIC_SYSTEMIC", "TOPICAL", "PHOTOTHERAPY", "OTHER")
@@ -1089,22 +1103,23 @@ CLASSES = ("BRANDED_BIOLOGIC", "GENERIC_SYSTEMIC", "TOPICAL", "PHOTOTHERAPY", "O
 def classify_drug_name(drug: str) -> str:
     """Map a drug or category name to one of the five classes via whitelist.
 
-    Returns 'OTHER' when no whitelist hit; in that case we still trust the
-    LLM's class field as the source of truth (downgrading only when the LLM
-    says BRANDED_BIOLOGIC for something that's clearly generic, or vice versa).
+    Returns 'OTHER' when no whitelist hit; in that case reconcile_class
+    falls back to the LLM's class field. Per CLAUDE.md rule #4, the brand
+    whitelist is the source of truth — checked BEFORE the TOPICAL /
+    PHOTOTHERAPY keyword heuristics, so a leaf naming a known biologic
+    can't accidentally classify as TOPICAL via a substring collision.
     """
     if not drug:
         return "OTHER"
     name = drug.lower()
-    # Specific keyword checks before brand-token fuzzy match
-    if any(k in name for k in _PHOTOTHERAPY_TOKENS):
-        return "PHOTOTHERAPY"
-    if any(k in name for k in _TOPICAL_TOKENS):
-        return "TOPICAL"
-    if any(tok in name for tok in _BIOLOGIC_TOKENS):
+    if _BIOLOGIC_RE.search(name):
         return "BRANDED_BIOLOGIC"
-    if any(tok in name for tok in _GENERIC_TOKENS):
+    if _GENERIC_RE.search(name):
         return "GENERIC_SYSTEMIC"
+    if _PHOTOTHERAPY_RE.search(name):
+        return "PHOTOTHERAPY"
+    if _TOPICAL_RE.search(name):
+        return "TOPICAL"
     return "OTHER"
 
 

@@ -184,6 +184,47 @@ def test_topical_counts_as_generic():
     assert r.brands == "NA"
 
 
+def test_biologic_leaf_with_tar_substring_not_misclassified():
+    """A leaf described as 'a biologic or targeted synthetic drug
+    (e.g., Sotyktu, Otezla)' contains the substring 'tar' inside the
+    word 'targeted'. The old classifier substring-matched 'tar' (a
+    coal-tar TOPICAL keyword) BEFORE the biologic whitelist, so this
+    leaf was misclassified as TOPICAL → counted as a generic step.
+
+    Per CLAUDE.md rule #4 the brand whitelist is the source of truth:
+    'Sotyktu' and 'Otezla' are both in BRAND_WHITELIST_BIOLOGIC, so the
+    leaf must reconcile to BRANDED_BIOLOGIC and contribute +1 brand.
+
+    Regression-tests the real STELARA case at 148593-4960549.pdf where
+    the universal branch is empty and the bug surfaces directly."""
+    graph = {
+        "universal_branch": [],
+        "indication_branch": [
+            {"logic": "LEAF",
+             "drug_or_category": "a biologic or targeted synthetic drug (e.g., Sotyktu, Otezla)",
+             "class": "BRANDED_BIOLOGIC",
+             "is_mandatory": True},
+        ],
+    }
+    r = step_graph.count_steps(graph)
+    assert r.brands == 1, f"Sotyktu/Otezla leaf must count as 1 brand, got brands={r.brands}"
+    assert r.generics == "NA", f"No generic step in this graph; got generics={r.generics}"
+
+
+def test_word_boundary_prevents_false_topical_match():
+    """Defensive: ensure substring-style false positives never sneak in.
+    'targeted' contains 'tar' (a TOPICAL keyword), 'started' contains
+    'tar', etc. None of these should classify as TOPICAL."""
+    from src.step_graph import classify_drug_name
+    assert classify_drug_name("targeted immune modulator") == "OTHER", \
+        "'targeted' must not classify as TOPICAL via 'tar' substring"
+    assert classify_drug_name("started therapy") == "OTHER", \
+        "'started' must not classify as TOPICAL via 'tar' substring"
+    # And confirm the real coal-tar topical still works
+    assert classify_drug_name("coal tar preparation") == "TOPICAL", \
+        "Real 'tar' as a standalone word must still classify as TOPICAL"
+
+
 if __name__ == "__main__":
     import traceback
     tests = [
@@ -194,6 +235,8 @@ if __name__ == "__main__":
         test_phototherapy_mandatory_when_at_top_level,
         test_branded_step_counting_via_whitelist,
         test_topical_counts_as_generic,
+        test_biologic_leaf_with_tar_substring_not_misclassified,
+        test_word_boundary_prevents_false_topical_match,
     ]
     passed = failed = 0
     for t in tests:
