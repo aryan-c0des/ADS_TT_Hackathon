@@ -54,15 +54,17 @@ def _to_restrictiveness(col: str, val) -> float:
                "Reauthorization Duration(in-months)"}:
         if s in {"unspecified", "na", "n/a", "none", ""}:
             return 0.3
-        try:
-            n = int(s)
-            if n >= 12:
-                return 0.0
-            if n >= 6:
-                return 0.3
-            return 0.7
-        except ValueError:
+        # Match the first integer (handles '6', '6 Months', '12 months', etc.)
+        import re
+        m = re.search(r"\d+", s)
+        if not m:
             return 0.3
+        n = int(m.group(0))
+        if n >= 12:
+            return 0.0
+        if n >= 6:
+            return 0.3
+        return 0.7
     return 0.0
 
 

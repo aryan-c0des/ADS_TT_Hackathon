@@ -1738,11 +1738,15 @@ def _normalise_yes_no(value: str, default: str = "No") -> str:
 
 
 def _normalise_months(value: str) -> str:
-    """Coerce free-form duration strings to integer months.
+    """Coerce free-form duration strings to '<N> Months' (Reference-sheet format).
 
     Day-strings are ALWAYS converted to months (rounded). The old version
     only converted when n >= 60, which silently left '30 days' as '30'
     (interpreted as 30 months downstream). Year-strings are also converted.
+
+    Output format matches the worked example in the PA_Business_Rules.xlsx
+    Reference sheet, which uses '6 Months' / '12 Months' (suffix always
+    plural, even for n=1).
     """
     if not value:
         return "Unspecified"
@@ -1762,7 +1766,7 @@ def _normalise_months(value: str) -> str:
         n = n * 12
     elif "week" in vl:
         n = max(1, round(n / 4.345))
-    return str(n)
+    return f"{n} Months"
 
 
 # ---------------------------------------------------------------------------
@@ -2277,15 +2281,17 @@ def _to_restrictiveness(col: str, val) -> float:
                "Reauthorization Duration(in-months)"}:
         if s in {"unspecified", "na", "n/a", "none", ""}:
             return 0.3
-        try:
-            n = int(s)
-            if n >= 12:
-                return 0.0
-            if n >= 6:
-                return 0.3
-            return 0.7
-        except ValueError:
+        # Match the first integer (handles '6', '6 Months', '12 months', etc.)
+        import re
+        m = re.search(r"\d+", s)
+        if not m:
             return 0.3
+        n = int(m.group(0))
+        if n >= 12:
+            return 0.0
+        if n >= 6:
+            return 0.3
+        return 0.7
     return 0.0
 
 

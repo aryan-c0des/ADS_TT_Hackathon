@@ -53,11 +53,15 @@ def _normalise_yes_no(value: str, default: str = "No") -> str:
 
 
 def _normalise_months(value: str) -> str:
-    """Coerce free-form duration strings to integer months.
+    """Coerce free-form duration strings to '<N> Months' (Reference-sheet format).
 
     Day-strings are ALWAYS converted to months (rounded). The old version
     only converted when n >= 60, which silently left '30 days' as '30'
     (interpreted as 30 months downstream). Year-strings are also converted.
+
+    Output format matches the worked example in the PA_Business_Rules.xlsx
+    Reference sheet, which uses '6 Months' / '12 Months' (suffix always
+    plural, even for n=1).
     """
     if not value:
         return "Unspecified"
@@ -77,7 +81,7 @@ def _normalise_months(value: str) -> str:
         n = n * 12
     elif "week" in vl:
         n = max(1, round(n / 4.345))
-    return str(n)
+    return f"{n} Months"
 
 
 # ---------------------------------------------------------------------------
