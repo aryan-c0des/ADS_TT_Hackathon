@@ -176,11 +176,11 @@ Field-specific rules:
 - tb_test_required: 'Yes' if a TB test is required prior to initiation; 'No' otherwise.
 - initial_authorization_duration_months: integer string ('6', '12') for months; 'Unspecified' if approved but no duration stated.
 - reauthorization_duration_months: integer string for months; 'Unspecified' if reauth required but no duration; 'NA' if no reauth process described.
-- reauthorization_required: 'Yes' if reauth/continuation criteria or a reauth duration is described; 'No' otherwise.
+- reauthorization_required: 'Yes' ONLY when the policy explicitly describes a reauthorization/continuation process AND provides concrete supporting detail — i.e., either (a) a specific reauth duration is stated, OR (b) specific continuation criteria are documented (e.g., 'documented positive clinical response', 'reduction in BSA', 'patient continues to meet initial criteria'). Generic mentions like 'continuation requests' or 'reauthorization may be granted' WITHOUT concrete criteria or duration → 'No'. When in doubt, prefer 'No'.
 
 [Text fields]
 - reauthorization_requirements: verbatim reauth/continuation criteria text. 'NA' when no specific criteria are documented.
-- specialist_types: comma-separated specialty names that may prescribe (e.g., 'Dermatologist', 'Rheumatologist'). 'NA' if not specified.
+- specialist_types: comma-separated PsO-SPECIFIC specialty names that may prescribe (e.g., 'Dermatologist'). CRITICAL FILTER: if the policy lists specialists by indication (e.g., 'Plaque psoriasis: dermatologist; Psoriatic arthritis: rheumatologist; Crohn's disease: gastroenterologist'), return ONLY the specialist(s) for plaque psoriasis. Do NOT include rheumatologist (PsA), gastroenterologist (UC/CD), or any other non-PsO specialist even if they appear in the policy. 'NA' if not specified for PsO.
 - quantity_limits: ONLY capture text explicitly labelled 'quantity limit' / 'QL'. Do NOT capture FDA dosing schedules, 'dosing limit', 'maximum dose', or recommended dose tables. 'Not specified' otherwise.
 
 [Step therapy detection]
