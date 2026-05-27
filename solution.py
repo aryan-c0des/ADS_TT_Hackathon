@@ -187,7 +187,11 @@ LLM_MODEL_FAST = "llama-3.1-8b-instant"
 LLM_API_KEY_ENV = "GROQ_API_KEY"
 LLM_TEMPERATURE_DEFAULT = 0.0
 LLM_TEMPERATURE_SECONDARY = 0.2
-LLM_MAX_OUTPUT_TOKENS = 4096
+# 2048 is plenty for our largest output (a step_graph JSON ~800 tokens, a
+# combined response ~1200 tokens). Was 4096 — too high because Groq counts
+# `max_tokens` against the per-request TPM cap (6000 for free tier), so a
+# 4096 reservation + 2200 input = 6296 → 413 error.
+LLM_MAX_OUTPUT_TOKENS = 2048
 LLM_MAX_RETRIES = 3
 # Groq free tier is rate-limited per-minute (RPM + TPM), not per-day. Keep
 # this as a soft heads-up only; the real backpressure comes from 429s.
@@ -905,10 +909,13 @@ def _schema_required_keys(schema: Dict[str, Any]) -> list[str]:
 
 
 def _format_schema_for_prompt(schema: Dict[str, Any]) -> str:
-    """Render the schema as compact pretty JSON for injection into the system
-    prompt. Llama follows explicit schema text far better than implicit
-    field-by-field descriptions."""
-    return json.dumps(schema, indent=2, sort_keys=False)
+    """Render the schema as compact JSON for injection into the system prompt.
+
+    Llama follows explicit schema text far better than implicit field-by-field
+    descriptions, but pretty-printing (indent=2) inflates the schema by ~40%
+    in tokens for no semantic gain. Compact form stays under per-request TPM
+    caps for free-tier Groq."""
+    return json.dumps(schema, sort_keys=False, separators=(",", ":"))
 
 
 def _build_messages(system: str, prompt: str, schema: Dict[str, Any],

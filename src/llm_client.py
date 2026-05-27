@@ -113,10 +113,13 @@ def _schema_required_keys(schema: Dict[str, Any]) -> list[str]:
 
 
 def _format_schema_for_prompt(schema: Dict[str, Any]) -> str:
-    """Render the schema as compact pretty JSON for injection into the system
-    prompt. Llama follows explicit schema text far better than implicit
-    field-by-field descriptions."""
-    return json.dumps(schema, indent=2, sort_keys=False)
+    """Render the schema as compact JSON for injection into the system prompt.
+
+    Llama follows explicit schema text far better than implicit field-by-field
+    descriptions, but pretty-printing (indent=2) inflates the schema by ~40%
+    in tokens for no semantic gain. Compact form stays under per-request TPM
+    caps for free-tier Groq."""
+    return json.dumps(schema, sort_keys=False, separators=(",", ":"))
 
 
 def _build_messages(system: str, prompt: str, schema: Dict[str, Any],
