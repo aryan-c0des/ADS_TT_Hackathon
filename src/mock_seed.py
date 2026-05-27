@@ -114,30 +114,51 @@ def _seed_for_row(filename: str, brand: str) -> None:
         m = re.search(r"(?i)(?:continuation|reauthor\w*)[^\n]{0,400}", seg_text)
         reauth_text = m.group(0).strip()[:600] if m else "Continuation per policy"
 
-    text_fields = {
+    # Build the combined 8B payload (scalars + text fields + step text + flag)
+    combined = {
+        "age": scalars["age"],
+        "tb_test_required": scalars["tb_test_required"],
+        "initial_authorization_duration_months": scalars["initial_authorization_duration_months"],
+        "reauthorization_duration_months": scalars["reauthorization_duration_months"],
+        "reauthorization_required": scalars["reauthorization_required"],
         "reauthorization_requirements": {"value": reauth_text or "NA", "evidence": reauth_text[:200]},
         "specialist_types": {"value": spec_val, "evidence": spec_match.group(0) if spec_match else ""},
         "quantity_limits": {"value": ql_val, "evidence": ql_match.group(0)[:200] if ql_match else ""},
+        "step_therapy_text": step_data["step_therapy_text"],
+        "has_step_therapy": bool(leaves),
     }
 
-    _store(extract_params._prompt_scalars(brand, seg_text),
-           extract_params.SCHEMA_SCALARS,
-           extract_params.SYSTEM_SCALARS, scalars)
-    _store(extract_params._prompt_step_therapy(brand, seg_text),
-           extract_params.SCHEMA_STEP_THERAPY,
-           extract_params.SYSTEM_STEP_THERAPY, step_data)
-    _store(extract_params._prompt_text_fields(brand, seg_text),
-           extract_params.SCHEMA_TEXT_FIELDS,
-           extract_params.SYSTEM_TEXT_FIELDS, text_fields)
+    # Cache the combined 8B call
+    _store(extract_params._prompt_combined(brand, seg_text),
+           extract_params.SCHEMA_COMBINED,
+           extract_params.SYSTEM_COMBINED, combined,
+           model=config.LLM_MODEL_FAST)
+
+    # If step therapy is present, cache the 70B step-graph call too
+    # (keyed on the verbatim step text, not the segment).
+    if leaves and step_data["step_therapy_text"]:
+        step_graph_payload = {
+            "moderate_to_severe_only": True,
+            "phototherapy_mandatory": False,
+            "step_graph": step_data["step_graph"],
+            "evidence_snippets": step_data.get("evidence_snippets", []),
+        }
+        _store(extract_params._prompt_step_graph(brand, step_data["step_therapy_text"]),
+               extract_params.SCHEMA_STEP_GRAPH,
+               extract_params.SYSTEM_STEP_GRAPH, step_graph_payload,
+               model=config.LLM_MODEL)
 
 
 def _store(prompt: str, schema: dict, system: str, payload: dict,
+           model: str | None = None,
            temperature: float | None = None) -> None:
     if temperature is None:
         temperature = config.LLM_TEMPERATURE_DEFAULT
+    if model is None:
+        model = config.LLM_MODEL
     schema_str = json.dumps(schema, sort_keys=True)
     key = llm_client._hash(  # type: ignore[attr-defined]
-        config.LLM_MODEL, temperature, system, prompt, schema_str,
+        model, temperature, system, prompt, schema_str,
     )
     path = config.LLM_CACHE / f"{key}.json"
     # `source: synthetic` is the in-file marker pipeline.run_all uses to detect

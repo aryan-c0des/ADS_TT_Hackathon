@@ -3,6 +3,8 @@ Verify the generated solution.py works end-to-end the same way the modular
 pipeline does. Primes the LLM cache for one row, then drives the row through
 solution.process_row() and renders the audit card via the embedded Jinja
 DictLoader.
+
+Updated for the Option H hybrid architecture.
 """
 from __future__ import annotations
 
@@ -30,15 +32,23 @@ def prime_cache_for_row(filename: str, brand: str) -> None:
     seg = segment_brand.segment(filename, brand, text)
     segment_text = seg.text
 
-    scalars_resp = {
+    combined_step_text = "The patient must have an inadequate response to a preferred TNF inhibitor or methotrexate."
+    combined_resp = {
         "age": {"value": ">=18", "evidence": "18 years of age or older"},
         "tb_test_required": {"value": "Yes", "evidence": "negative TB screening"},
         "initial_authorization_duration_months": {"value": "6", "evidence": "Initial: 6 months"},
         "reauthorization_duration_months": {"value": "12", "evidence": "Reauth: 12 months"},
         "reauthorization_required": {"value": "Yes", "evidence": "Reauth criteria below"},
+        "reauthorization_requirements": {
+            "value": "Documented positive clinical response.",
+            "evidence": "positive clinical response",
+        },
+        "specialist_types": {"value": "Dermatologist", "evidence": "prescribed by a dermatologist"},
+        "quantity_limits": {"value": "Not specified", "evidence": ""},
+        "step_therapy_text": combined_step_text,
+        "has_step_therapy": True,
     }
-    step_resp = {
-        "step_therapy_text": "Inadequate response to a preferred TNF inhibitor required.",
+    step_graph_resp = {
         "moderate_to_severe_only": True,
         "phototherapy_mandatory": False,
         "step_graph": {
@@ -52,24 +62,19 @@ def prime_cache_for_row(filename: str, brand: str) -> None:
         },
         "evidence_snippets": ["inadequate response to a preferred TNF inhibitor"],
     }
-    text_resp = {
-        "reauthorization_requirements": {"value": "Documented positive clinical response.", "evidence": "positive clinical response"},
-        "specialist_types": {"value": "Dermatologist", "evidence": "prescribed by a dermatologist"},
-        "quantity_limits": {"value": "Not specified", "evidence": ""},
-    }
 
-    def _store(prompt, schema, system, payload, temperature=config.LLM_TEMPERATURE_DEFAULT):
+    def _store(prompt, schema, system, payload, model, temperature=config.LLM_TEMPERATURE_DEFAULT):
         schema_str = json.dumps(schema, sort_keys=True)
-        key = llm_client._hash(config.LLM_MODEL, temperature, system, prompt, schema_str)
+        key = llm_client._hash(model, temperature, system, prompt, schema_str)
         path = config.LLM_CACHE / f"{key}.json"
         path.write_text(json.dumps({"raw_text": json.dumps(payload), "payload": payload}, indent=2), encoding="utf-8")
 
-    _store(extract_params._prompt_scalars(brand, segment_text),
-           extract_params.SCHEMA_SCALARS, extract_params.SYSTEM_SCALARS, scalars_resp)
-    _store(extract_params._prompt_step_therapy(brand, segment_text),
-           extract_params.SCHEMA_STEP_THERAPY, extract_params.SYSTEM_STEP_THERAPY, step_resp)
-    _store(extract_params._prompt_text_fields(brand, segment_text),
-           extract_params.SCHEMA_TEXT_FIELDS, extract_params.SYSTEM_TEXT_FIELDS, text_resp)
+    _store(extract_params._prompt_combined(brand, segment_text),
+           extract_params.SCHEMA_COMBINED, extract_params.SYSTEM_COMBINED,
+           combined_resp, model=config.LLM_MODEL_FAST)
+    _store(extract_params._prompt_step_graph(brand, combined_step_text),
+           extract_params.SCHEMA_STEP_GRAPH, extract_params.SYSTEM_STEP_GRAPH,
+           step_graph_resp, model=config.LLM_MODEL)
 
 
 def main():
