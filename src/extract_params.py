@@ -280,6 +280,14 @@ class ExtractedRow:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
 
+# Cap on segment text sent to the combined 8B call. Groq's free-tier 8B
+# enforces a 6000 TPM per-request cap. System prompt ~1650 tokens,
+# max_output 1024, so user prompt must stay under ~3300 tokens ≈ 13K chars
+# including boilerplate. We cap segments at 8K chars (~2000 tokens) for
+# comfortable margin even on mega-formulary policies.
+_MAX_SEGMENT_CHARS_FOR_COMBINED = 8000
+
+
 def _wrap_policy(segment_text: str) -> str:
     """Wrap untrusted policy text in sentinel markers."""
     safe = segment_text.replace("<<<POLICY>>>", "<<<policy>>>") \
@@ -296,10 +304,15 @@ def _wrap_step_text(step_text: str) -> str:
 
 
 def _prompt_combined(brand: str, segment_text: str) -> str:
+    # Truncate to stay under per-request TPM. Front-truncation is fine
+    # because segment_brand.py builds segments with the PsO section at
+    # the head; the tail typically contains tangential / other-indication
+    # text we'd ignore anyway.
+    capped = segment_text[:_MAX_SEGMENT_CHARS_FOR_COMBINED]
     return (
         f"Brand: {brand}\n\n"
         f"Extract the listed fields from the policy text below. Return JSON matching the schema.\n\n"
-        f"POLICY TEXT (PsO-relevant slice):\n{_wrap_policy(segment_text)}"
+        f"POLICY TEXT (PsO-relevant slice):\n{_wrap_policy(capped)}"
     )
 
 

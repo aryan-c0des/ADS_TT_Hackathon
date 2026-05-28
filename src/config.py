@@ -49,11 +49,12 @@ LLM_MODEL_FAST = "llama-3.1-8b-instant"
 LLM_API_KEY_ENV = "GROQ_API_KEY"
 LLM_TEMPERATURE_DEFAULT = 0.0
 LLM_TEMPERATURE_SECONDARY = 0.2
-# 2048 is plenty for our largest output (a step_graph JSON ~800 tokens, a
-# combined response ~1200 tokens). Was 4096 — too high because Groq counts
-# `max_tokens` against the per-request TPM cap (6000 for free tier), so a
-# 4096 reservation + 2200 input = 6296 → 413 error.
-LLM_MAX_OUTPUT_TOKENS = 2048
+# 1024 is still plenty for our largest output (step_graph JSON ~800
+# tokens, combined response ~1200 tokens — typical outputs are 600-800).
+# Reduced from 2048 because rows with long segments (mega-formularies
+# ~10-15K chars) still occasionally pushed total request size above
+# Groq's 6000 TPM per-request cap even after the 4096→2048 reduction.
+LLM_MAX_OUTPUT_TOKENS = 1024
 LLM_MAX_RETRIES = 3
 # Groq free tier is rate-limited per-minute (RPM + TPM), not per-day. Keep
 # this as a soft heads-up only; the real backpressure comes from 429s.

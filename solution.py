@@ -187,11 +187,12 @@ LLM_MODEL_FAST = "llama-3.1-8b-instant"
 LLM_API_KEY_ENV = "GROQ_API_KEY"
 LLM_TEMPERATURE_DEFAULT = 0.0
 LLM_TEMPERATURE_SECONDARY = 0.2
-# 2048 is plenty for our largest output (a step_graph JSON ~800 tokens, a
-# combined response ~1200 tokens). Was 4096 — too high because Groq counts
-# `max_tokens` against the per-request TPM cap (6000 for free tier), so a
-# 4096 reservation + 2200 input = 6296 → 413 error.
-LLM_MAX_OUTPUT_TOKENS = 2048
+# 1024 is still plenty for our largest output (step_graph JSON ~800
+# tokens, combined response ~1200 tokens — typical outputs are 600-800).
+# Reduced from 2048 because rows with long segments (mega-formularies
+# ~10-15K chars) still occasionally pushed total request size above
+# Groq's 6000 TPM per-request cap even after the 4096→2048 reduction.
+LLM_MAX_OUTPUT_TOKENS = 1024
 LLM_MAX_RETRIES = 3
 # Groq free tier is rate-limited per-minute (RPM + TPM), not per-day. Keep
 # this as a soft heads-up only; the real backpressure comes from 429s.
@@ -1620,6 +1621,14 @@ class ExtractedRow:
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
 
+# Cap on segment text sent to the combined 8B call. Groq's free-tier 8B
+# enforces a 6000 TPM per-request cap. System prompt ~1650 tokens,
+# max_output 1024, so user prompt must stay under ~3300 tokens ≈ 13K chars
+# including boilerplate. We cap segments at 8K chars (~2000 tokens) for
+# comfortable margin even on mega-formulary policies.
+_MAX_SEGMENT_CHARS_FOR_COMBINED = 8000
+
+
 def _wrap_policy(segment_text: str) -> str:
     """Wrap untrusted policy text in sentinel markers."""
     safe = segment_text.replace("<<<POLICY>>>", "<<<policy>>>") \
@@ -1636,10 +1645,15 @@ def _wrap_step_text(step_text: str) -> str:
 
 
 def _prompt_combined(brand: str, segment_text: str) -> str:
+    # Truncate to stay under per-request TPM. Front-truncation is fine
+    # because segment_brand.py builds segments with the PsO section at
+    # the head; the tail typically contains tangential / other-indication
+    # text we'd ignore anyway.
+    capped = segment_text[:_MAX_SEGMENT_CHARS_FOR_COMBINED]
     return (
         f"Brand: {brand}\n\n"
         f"Extract the listed fields from the policy text below. Return JSON matching the schema.\n\n"
-        f"POLICY TEXT (PsO-relevant slice):\n{_wrap_policy(segment_text)}"
+        f"POLICY TEXT (PsO-relevant slice):\n{_wrap_policy(capped)}"
     )
 
 
