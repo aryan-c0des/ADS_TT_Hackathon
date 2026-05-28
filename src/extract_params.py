@@ -242,13 +242,26 @@ Decomposition rules:
 - Topicals (corticosteroid, calcipotriene, retinoid, tar, tacrolimus, etc.) = class TOPICAL.
 - Conventional systemics (methotrexate, cyclosporine, acitretin) = class GENERIC_SYSTEMIC.
 - TNF inhibitors / IL-17 / IL-23 / IL-12-23 / PDE4 / TYK2 (Sotyktu, Otezla, Humira, Stelara, etc.) = BRANDED_BIOLOGIC.
-- Two step statements with no explicit AND/OR connector → default to OR (least restrictive).
 - 'Contraindication / intolerance to a specific named brand' = 1 BRANDED_BIOLOGIC leaf.
 - If the text is empty or contains no actionable step requirements, return empty arrays for both branches.
 
+AND vs OR — CRITICAL distinction. Read the policy's exact phrasing:
+- "trial and failure of ONE of the following: A, B, C" → OR(LEAF_A, LEAF_B, LEAF_C). Patient picks one.
+- "trial and failure of A, B, OR C" → OR(LEAF_A, LEAF_B, LEAF_C). The word 'OR' is explicit.
+- "inadequate response to A, B, or C" → OR(...). Same.
+- "ANY ONE of the following combinations: i. X; ii. Y; iii. Z" → OR(LEAF_X, LEAF_Y, LEAF_Z).
+- "either A or B" → OR(LEAF_A, LEAF_B).
+- "ALL of the following: A, B, C" → AND(LEAF_A, LEAF_B, LEAF_C). Patient must satisfy all.
+- "must meet ALL: A AND B AND C" → AND(...).
+- "contraindication to ALL: A, B, C" → 1 LEAF representing the contraindication, NOT 3 separate steps.
+- Bulleted / numbered list under "ONE of:" / "any of:" / "either:" → OR.
+- Bulleted / numbered list under "ALL of:" / "must have:" / "and meets:" → AND.
+- Two step statements with no explicit AND/OR connector → default to OR (least restrictive — counter prefers cheaper paths).
+- DEFAULT BIAS: when uncertain whether a list is OR vs AND, prefer OR. PA policies typically present TRIAL alternatives (try one of these drugs) rather than requiring failure of ALL drugs in a list.
+
 phototherapy_mandatory: true ONLY IF a PHOTOTHERAPY leaf is required AND not under any OR ancestor.
 
-Compact worked example:
+Worked example 1 (nested OR with mixed classes):
 TEXT: "Universal: contraindication or intolerance to Yesintek. Indication: previously received a biologic (e.g., Sotyktu, Otezla) OR (inadequate response to phototherapy OR to methotrexate / cyclosporine / acitretin)."
 
 GRAPH (correct):
@@ -260,7 +273,24 @@ GRAPH (correct):
       LEAF{methotrexate-cyclosporine-acitretin, GENERIC_SYSTEMIC}
     }
   }]
-Counts: 1 brand + 1 generic, phototherapy=No (it's under an OR, not mandatory)."""
+Counts: 1 brand + 1 generic, phototherapy=No (it's under an OR, not mandatory).
+
+Worked example 2 (ONE-of-the-following list — DO NOT make this AND):
+TEXT: "Member has had a minimum duration of a 4-week trial and failure, or intolerance to ONE of the following topical therapies, or contraindication to ALL of them: corticosteroids, vitamin D analogs, tazarotene, calcineurin inhibitors, anthralin, coal tar."
+
+GRAPH (correct):
+  indication: [OR{
+    LEAF{corticosteroids, TOPICAL},
+    LEAF{vitamin D analogs, TOPICAL},
+    LEAF{tazarotene, TOPICAL},
+    LEAF{calcineurin inhibitors, TOPICAL},
+    LEAF{anthralin, TOPICAL},
+    LEAF{coal tar, TOPICAL}
+  }]
+WRONG GRAPH (do NOT produce this):
+  indication: [AND{...same 6 LEAVES...}]
+Counts (correct): 1 generic (least restrictive of the 6 topicals = 1 topical = 1 generic-equivalent step).
+Counts if you mis-decompose as AND: 6 generic steps — wildly incorrect, the patient only needs to try ONE drug from the list."""
 
 
 # ---------------------------------------------------------------------------
