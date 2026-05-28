@@ -1527,7 +1527,13 @@ SYSTEM_COMBINED = SYSTEM_SHARED + """
 Field-specific rules:
 
 [Scalars]
-- age: youngest eligible age. '>=N' for integer threshold (e.g., '>=18', '>=6'). 'FDA labelled age' if policy says 'FDA labelled age' or 'adult' without a numeric age. 'No' if no age restriction.
+- age: youngest eligible age. Use EXACTLY one of these output formats:
+  * '>=N' (e.g., '>=18', '>=6') — when the policy gives an explicit numeric age threshold ("18 years of age or older", "≥6 years").
+  * 'adult' — when the policy says "adult", "adult patients", "adult members" or similar WITHOUT giving a number. (Python will convert this to >=18.)
+  * 'FDA labelled age' — when the policy references "FDA-labelled age", "FDA-approved age", "as indicated by FDA labelling", "for the FDA-approved indication", or any other phrasing that ties the age to the drug's FDA label WITHOUT giving a number AND WITHOUT using the word "adult". (Python will look up the drug-specific FDA-approved minimum age.)
+  * 'No' — when the policy EXPLICITLY states there is no age restriction ("no age restriction", "all ages", "any age").
+  * 'NA' — when the policy is ENTIRELY SILENT on age (no mention of age, age threshold, FDA label, or "adult" anywhere in the PsO criteria).
+  CRITICAL: 'adult' and 'FDA labelled age' are DIFFERENT cases — emit 'adult' only when the policy literally uses the word "adult" without a number. Emit 'FDA labelled age' only when the policy references the FDA label / FDA approval without using "adult". Do NOT default to 'NA' when the policy gives an indication-related age signal; reserve 'NA' for true silence.
 - tb_test_required: 'Yes' if a TB test is required prior to initiation; 'No' otherwise.
 - initial_authorization_duration_months: integer string ('6', '12') for months; 'Unspecified' if approved but no duration stated.
 - reauthorization_duration_months: integer string for months; 'Unspecified' if reauth required but no duration; 'NA' if no reauth process described.
@@ -1898,17 +1904,43 @@ class ValidationOutcome:
 # ---------------------------------------------------------------------------
 # Normalisers
 # ---------------------------------------------------------------------------
-def _normalise_age(value: str) -> str:
+def _normalise_age(value: str, brand: str = "") -> str:
+    """Per organizer's clarification (28 May 2026):
+      - Policy entirely SILENT on age → 'NA'
+      - Policy explicitly says no age restriction → 'No'
+      - Policy says 'adult' / 'adult patients' (no number) → '>=18' (always 18)
+      - Policy references 'FDA labelled age' / 'FDA approved' etc. (no number) →
+        look up the drug-specific FDA-approved minimum age and emit '>=N'
+      - Policy gives an explicit numeric threshold → '>=N'
+    Brand is passed so we can look up FDA_MIN_AGE_PSO for the FDA-label case.
+    """
     if not value:
-        return "No"
+        return "NA"
     v = value.strip()
-    if v.lower() in {"no", "na", "n/a", "none"}:
+    vl = v.lower()
+    # Explicit "silent" / NA marker from the LLM
+    if vl in {"na", "n/a", "none", ""}:
+        return "NA"
+    # Explicit "no age restriction"
+    if vl == "no":
         return "No"
-    if re.search(r"(?i)fda\s+label", v):
+    # "adult" without a number → always >=18 per organizer's rule
+    if re.search(r"(?i)\badult", v) and not re.search(r"\d", v):
+        return ">=18"
+    # "FDA labelled age" / "FDA-approved" reference → look up drug-specific FDA min
+    if re.search(r"(?i)fda", v) and not re.search(r"\d", v):
+        canon = (brand or "").upper().strip()
+        fda_min = config.FDA_MIN_AGE_PSO.get(canon)
+        if fda_min is not None:
+            return f">={fda_min}"
+        # Fallback if the brand isn't in our FDA-age table — emit the
+        # literal so a human reviewer can spot it in the audit card.
         return "FDA labelled age"
+    # Explicit numeric threshold ("18 years of age or older", ">=6")
     m = re.search(r"(\d+)", v)
     if m:
         return f">={m.group(1)}"
+    # Unrecognised — pass through (defensive)
     return v
 
 
@@ -1970,8 +2002,9 @@ def validate(extracted, count_result) -> ValidationOutcome:
     st = extracted.step_data
 
     # ---- Age normalisation ----
+    # Pass brand so 'FDA labelled age' resolves to the drug-specific FDA min.
     age_raw = (s.get("age") or {}).get("value", "")
-    o.fixed["Age"] = _normalise_age(age_raw)
+    o.fixed["Age"] = _normalise_age(age_raw, brand=extracted.brand)
 
     # ---- TB ----
     tb = (s.get("tb_test_required") or {}).get("value", "")

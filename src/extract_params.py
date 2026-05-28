@@ -172,7 +172,13 @@ SYSTEM_COMBINED = SYSTEM_SHARED + """
 Field-specific rules:
 
 [Scalars]
-- age: youngest eligible age. '>=N' for integer threshold (e.g., '>=18', '>=6'). 'FDA labelled age' if policy says 'FDA labelled age' or 'adult' without a numeric age. 'No' if no age restriction.
+- age: youngest eligible age. Use EXACTLY one of these output formats:
+  * '>=N' (e.g., '>=18', '>=6') — when the policy gives an explicit numeric age threshold ("18 years of age or older", "≥6 years").
+  * 'adult' — when the policy says "adult", "adult patients", "adult members" or similar WITHOUT giving a number. (Python will convert this to >=18.)
+  * 'FDA labelled age' — when the policy references "FDA-labelled age", "FDA-approved age", "as indicated by FDA labelling", "for the FDA-approved indication", or any other phrasing that ties the age to the drug's FDA label WITHOUT giving a number AND WITHOUT using the word "adult". (Python will look up the drug-specific FDA-approved minimum age.)
+  * 'No' — when the policy EXPLICITLY states there is no age restriction ("no age restriction", "all ages", "any age").
+  * 'NA' — when the policy is ENTIRELY SILENT on age (no mention of age, age threshold, FDA label, or "adult" anywhere in the PsO criteria).
+  CRITICAL: 'adult' and 'FDA labelled age' are DIFFERENT cases — emit 'adult' only when the policy literally uses the word "adult" without a number. Emit 'FDA labelled age' only when the policy references the FDA label / FDA approval without using "adult". Do NOT default to 'NA' when the policy gives an indication-related age signal; reserve 'NA' for true silence.
 - tb_test_required: 'Yes' if a TB test is required prior to initiation; 'No' otherwise.
 - initial_authorization_duration_months: integer string ('6', '12') for months; 'Unspecified' if approved but no duration stated.
 - reauthorization_duration_months: integer string for months; 'Unspecified' if reauth required but no duration; 'NA' if no reauth process described.
