@@ -1525,13 +1525,30 @@ Field-specific rules:
 - quantity_limits: ONLY capture text explicitly labelled 'quantity limit' / 'QL'. Do NOT capture FDA dosing schedules, 'dosing limit', 'maximum dose', or recommended dose tables. 'Not specified' otherwise.
 
 [Step therapy detection]
-- step_therapy_text: VERBATIM concatenation of step-therapy language from the policy. Lead with any universal/all-indications language, then the PsO-specific language. Do NOT paraphrase. Empty string if no step therapy is required.
-- has_step_therapy: set to true if ANY of the following appear: a requirement to have previously received another medication, an inadequate-response / failure / intolerance to a prior treatment, a contraindication to a named biologic, or any explicit 'step therapy' language. Otherwise false. When unsure, prefer true (the downstream step-graph model will validate)."""
+A policy has STEP THERAPY when it REQUIRES the patient to have previously tried/failed/been-intolerant-to other medications BEFORE the target drug can be approved. Common phrasings to look for:
+  * "patient must have previously received [biologic / drug class / specific drug]"
+  * "previously received a biologic or targeted synthetic drug"
+  * "documented inadequate response to [drug]"
+  * "trial and failure of [drug]"
+  * "intolerance to or contraindication to [drug]"
+  * "the patient is unable to take [drug] due to [trial / contraindication]"
+  * "step therapy through [drug class]"
+  * "previously tried [drug]"
+
+- has_step_therapy: TRUE if ANY of the above (or close variants) appear for moderate-to-severe PsO. FALSE only when the policy makes no such requirement. Note: mere documentation suggestions like "Chart notes supporting previous medications tried (if applicable)" are NOT step therapy — they're just paperwork hints; only flag TRUE when the policy makes prior-treatment an APPROVAL CONDITION.
+
+- step_therapy_text: REQUIRED to be non-empty whenever has_step_therapy=true. Verbatim quote of the step-therapy sentence(s) from the policy (typically 50-500 chars). Lead with any universal/all-indications language, then the PsO-specific language. Do NOT paraphrase, summarize, or invent content. Empty string ONLY when has_step_therapy=false.
+
+CRITICAL CONSISTENCY: has_step_therapy=true ⟺ step_therapy_text is non-empty. NEVER emit has_step_therapy=true with empty step_therapy_text, and NEVER emit has_step_therapy=false with non-empty step_therapy_text."""
 
 
 SYSTEM_STEP_GRAPH = SYSTEM_SHARED + """
 
-You are given a PRE-EXTRACTED step-therapy text snippet (NOT a full policy). Your job is to decompose it into a structured step_graph.
+You are given step-therapy text from a US Prior Authorization policy for plaque psoriasis. The input may be either:
+  (a) a pre-extracted step-therapy snippet (concise — start decomposing immediately), OR
+  (b) a slice of the full policy where the step-therapy clauses are embedded among other content (you must first IDENTIFY the step-therapy clauses — the requirements that the patient previously tried/failed/contraindicated-to other medications — and ignore the rest of the policy).
+
+Your job: decompose the step-therapy requirements into a structured step_graph.
 
   step_graph = {
     "universal_branch": [<node>, ...],  # universal/all-indications criteria
@@ -1730,15 +1747,27 @@ def extract_row(filename: str, brand: str, segment_text: str,
     out.diagnostics["py_has_steps"] = py_has_steps
     out.diagnostics["step_graph_invoked"] = needs_step_graph
 
-    if not needs_step_graph or not step_text:
-        # No step therapy detected → skip the 70B call entirely.
+    if not needs_step_graph:
+        # No step therapy detected by either signal → skip the 70B call.
         out.step_data = _empty_step_data(step_text)
         return out
+
+    # Decide what to send to 70B:
+    #   - If 8B extracted a verbatim step_therapy_text, use that (concise input).
+    #   - Else (8B missed it but Python heuristic flagged step markers in the
+    #     segment), fall back to sending 70B the capped segment and let the
+    #     stronger model identify the step clauses itself.
+    if step_text:
+        step_graph_input = step_text
+        out.diagnostics["step_graph_input_kind"] = "extracted_text"
+    else:
+        step_graph_input = segment_text[:_MAX_SEGMENT_CHARS_FOR_COMBINED]
+        out.diagnostics["step_graph_input_kind"] = "full_segment_fallback"
 
     # ---- 70B step-graph call (conditional) ----
     try:
         res_b = llm_client.call_json(
-            _prompt_step_graph(brand, step_text),
+            _prompt_step_graph(brand, step_graph_input),
             SCHEMA_STEP_GRAPH,
             system=SYSTEM_STEP_GRAPH,
             temperature=config.LLM_TEMPERATURE_DEFAULT,
