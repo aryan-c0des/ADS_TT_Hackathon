@@ -180,7 +180,20 @@ Field-specific rules:
 
 [Text fields]
 - reauthorization_requirements: verbatim reauth/continuation criteria text. 'NA' when no specific criteria are documented.
-- specialist_types: comma-separated PsO-SPECIFIC specialty names that may prescribe (e.g., 'Dermatologist'). CRITICAL FILTER: if the policy lists specialists by indication (e.g., 'Plaque psoriasis: dermatologist; Psoriatic arthritis: rheumatologist; Crohn's disease: gastroenterologist'), return ONLY the specialist(s) for plaque psoriasis. Do NOT include rheumatologist (PsA), gastroenterologist (UC/CD), or any other non-PsO specialist even if they appear in the policy. 'NA' if not specified for PsO.
+- specialist_types: The specialty/specialties that may prescribe the drug FOR PLAQUE PSORIASIS specifically. The default and almost-always-correct answer is "Dermatologist".
+  WORKED EXAMPLES (study these carefully):
+    * Policy text: "Plaque psoriasis: dermatologist; Psoriatic arthritis: rheumatologist or dermatologist; Crohn's disease: gastroenterologist"
+      → CORRECT output: "Dermatologist"   (ONLY the PsO line)
+      → WRONG output: "Dermatologist, Rheumatologist, Gastroenterologist"
+    * Policy text: "Must be prescribed by a dermatologist"
+      → CORRECT output: "Dermatologist"
+    * Policy text: "Plaque psoriasis: dermatologist or rheumatologist"   (rheum LISTED for PsO)
+      → CORRECT output: "Dermatologist, Rheumatologist"
+    * Policy text: lists specialists with no PsO mapping at all
+      → CORRECT output: "NA"
+  REJECTION LIST — NEVER include these in the output UNLESS the policy explicitly assigns them to plaque psoriasis (not PsA, not UC, not CD, not sarcoidosis, not Behcet's):
+    Rheumatologist (only valid if PsO row names it), Gastroenterologist, Colorectal Surgeon, Pulmonologist, Immunologist, Hematologist, Oncologist.
+  When in doubt, prefer "Dermatologist" alone.
 - quantity_limits: ONLY capture text explicitly labelled 'quantity limit' / 'QL'. Do NOT capture FDA dosing schedules, 'dosing limit', 'maximum dose', or recommended dose tables. 'Not specified' otherwise.
 
 [Step therapy detection]
