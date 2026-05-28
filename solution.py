@@ -1116,6 +1116,17 @@ def classify_drug_name(drug: str) -> str:
     whitelist is the source of truth — checked BEFORE the TOPICAL /
     PHOTOTHERAPY keyword heuristics, so a leaf naming a known biologic
     can't accidentally classify as TOPICAL via a substring collision.
+
+    PHOTOTHERAPY-only refinement: when the LLM lumps a multi-option OR
+    criterion into a single LEAF (real-world example from row 325611:
+    "topical agent + systemic agent OR topical agent + phototherapy OR
+    systemic agent + phototherapy OR 2 systemic agents OR ..."), the
+    description contains "phototherapy" alongside "topical"/"systemic"
+    keywords. Classifying that as PHOTOTHERAPY triggers a spurious -6
+    score penalty. So we only return PHOTOTHERAPY when the description
+    is a SINGLE-PURPOSE phototherapy step — i.e., no other class keywords
+    are also present. Mixed leaves fall through to TOPICAL (or OTHER),
+    which the counter treats as a generic step. Safer in the lumped case.
     """
     if not drug:
         return "OTHER"
@@ -1124,9 +1135,12 @@ def classify_drug_name(drug: str) -> str:
         return "BRANDED_BIOLOGIC"
     if _GENERIC_RE.search(name):
         return "GENERIC_SYSTEMIC"
-    if _PHOTOTHERAPY_RE.search(name):
+    has_photo = bool(_PHOTOTHERAPY_RE.search(name))
+    has_topical = bool(_TOPICAL_RE.search(name))
+    # Pure phototherapy leaf only — no topical alternatives in the same description.
+    if has_photo and not has_topical:
         return "PHOTOTHERAPY"
-    if _TOPICAL_RE.search(name):
+    if has_topical:
         return "TOPICAL"
     return "OTHER"
 

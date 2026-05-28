@@ -225,6 +225,58 @@ def test_word_boundary_prevents_false_topical_match():
         "Real 'tar' as a standalone word must still classify as TOPICAL"
 
 
+def test_lumped_or_leaf_with_phototherapy_substring_not_misclassified():
+    """Regression test from the real 79-row run (Row 325611-4784675 TREMFYA,
+    score=22, Validation flag 'phototherapy=Yes but step text doesn't mention
+    phototherapy — verify').
+
+    The policy criterion 3.b says 'ONE of the following combinations' with
+    five OR options including 'topical + phototherapy', 'systemic + phototherapy',
+    etc. 8B lumped all five into a single LEAF whose description is:
+
+      'topical agent + systemic agent OR topical agent + phototherapy OR
+       systemic agent + phototherapy OR 2 systemic agents OR contraindication
+       to ALL conventional therapies'
+
+    The old classifier saw 'phototherapy' as a substring → PHOTOTHERAPY →
+    triggered -6 score penalty. That's wrong — this leaf is a multi-option
+    OR criterion where the patient can pick (e.g.) 'two systemic agents'
+    with no phototherapy involved.
+
+    Fix: classify as TOPICAL when 'phototherapy' appears alongside 'topical'
+    (or other class) in the description. The lumped LEAF then counts as a
+    generic step, not a phototherapy step. Score-impact: removes the -6
+    spurious penalty."""
+    from src.step_graph import classify_drug_name
+    desc = ("topical agent + systemic agent OR topical agent + phototherapy "
+            "OR systemic agent + phototherapy OR 2 systemic agents OR "
+            "contraindication to ALL conventional therapies")
+    cls = classify_drug_name(desc)
+    assert cls != "PHOTOTHERAPY", \
+        f"Lumped OR leaf must not classify as PHOTOTHERAPY, got {cls}"
+    # 'topical' is present → falls to TOPICAL, which the counter aggregates
+    # as a generic step (no -6 photo penalty).
+    assert cls == "TOPICAL", \
+        f"Lumped leaf with 'topical' keyword should classify as TOPICAL, got {cls}"
+
+
+def test_pure_phototherapy_leaf_still_classifies_correctly():
+    """Defensive: ensure the lumped-leaf fix doesn't regress single-purpose
+    phototherapy leaves (UVB, PUVA, narrowband UV) — these should still
+    classify as PHOTOTHERAPY since no other class keyword is present."""
+    from src.step_graph import classify_drug_name
+    for desc in [
+        "phototherapy",
+        "phototherapy (UVB, PUVA)",
+        "narrow-band UVB",
+        "PUVA psoralen + UVA",
+        "ultraviolet light therapy",
+    ]:
+        cls = classify_drug_name(desc)
+        assert cls == "PHOTOTHERAPY", \
+            f"{desc!r} should still classify PHOTOTHERAPY (single-purpose), got {cls}"
+
+
 if __name__ == "__main__":
     import traceback
     tests = [
@@ -237,6 +289,8 @@ if __name__ == "__main__":
         test_topical_counts_as_generic,
         test_biologic_leaf_with_tar_substring_not_misclassified,
         test_word_boundary_prevents_false_topical_match,
+        test_lumped_or_leaf_with_phototherapy_substring_not_misclassified,
+        test_pure_phototherapy_leaf_still_classifies_correctly,
     ]
     passed = failed = 0
     for t in tests:
