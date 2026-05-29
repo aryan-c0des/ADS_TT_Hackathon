@@ -6,81 +6,144 @@ Built for the H1'26 hackathon. The design priority is **auditability** over raw 
 
 ---
 
-## Model declaration
+## 🚀 Evaluator workflow (4 steps)
 
-**This submission uses a single model: `llama-3.3-70b-versatile` (via Groq free tier).**
+The submission ZIP is fully self-contained. Run the pipeline as follows:
 
-All three LLM extraction prompts are routed to this model:
-
-| Pipeline step | Model |
-|---|---|
-| Prompt A — Scalars (Age, TB test, auth durations) | llama-3.3-70b-versatile |
-| Prompt B — Step Therapy graph extraction | llama-3.3-70b-versatile |
-| Prompt C — Text fields (Reauth criteria, Specialist, Quantity Limits) | llama-3.3-70b-versatile |
-
-All other pipeline steps (step counting, validation, access scoring) are deterministic Python — no model involved.
-
----
-
-## Quick start
+**1. Unzip the submission**
 
 ```bash
-# 1. Install (Colab/Kaggle: prepend !)
+unzip arein_submission.zip -d arein_submission
+cd arein_submission
+```
+
+Everything ships inside the ZIP with relative paths — PDFs, code, Excel sheets, and dependencies list. No external files or path edits needed.
+
+**2. Install dependencies and prepare the environment**
+
+```bash
 pip install -r requirements.txt
-apt-get install -y poppler-utils    # needs pdftotext on the PATH
-
-# 2. Set the API key (Groq free tier — console.groq.com)
-export GROQ_API_KEY="..."
-
-# 3. IMPORTANT: clear synthetic cache before the first real run
-rm -f data/llm_cache/*
-
-# 4. Run the notebook end-to-end (judges should just hit "Run All")
-jupyter notebook notebook.ipynb
+apt-get install -y poppler-utils   # Linux; macOS: brew install poppler; Windows: choco install poppler
 ```
 
-> **Why the cache clear?** The repo ships with a *synthetic-response* cache (built by `src/mock_seed.py`) so the pipeline can run offline for development and demos. Once you set a real `GROQ_API_KEY`, you want fresh LLM calls — clearing `data/llm_cache/` forces them. Subsequent runs are cached again and free.
+The pipeline needs `pdftotext` (from poppler) on the PATH for PDF parsing.
 
-Or run headless from a shell:
+**3. Set your Groq API key via `.env`**
+
+Copy the template and fill in your key:
 
 ```bash
-python -c "from src import pipeline; pipeline.run_all()"
+cp .env.example .env
+# Edit .env and replace `your_groq_api_key_here` with your actual key from
+# https://console.groq.com/keys (free tier is sufficient)
 ```
 
-Outputs land in `output/`:
+The driver auto-loads `.env` on startup. Alternatively, export `GROQ_API_KEY=gsk_...` in your shell.
+
+**4. Run the driver and read `result.csv`**
+
+```bash
+python solution.py
+```
+
+That's it. The driver:
+- Processes all 70 PDFs across all 79 `(Filename, Brand)` rows from the Submissions sheet.
+- Writes the 15-column CSV to **`output/result.csv`** (the submission deliverable).
+- Renders per-row audit cards to `output/audit/*.html` (one HTML file per row, plus `index.html`).
+- Renders visualization PNGs (`output/heatmap.png`, `output/score_distribution.png`).
+
+Typical wallclock: **8-12 minutes** for the full 79 rows on Groq free tier (cold cache).
+
+CLI flags:
+- `python solution.py --limit 5` — process first 5 rows only (smoke test).
+- `python solution.py --no-cards` — skip audit-card rendering.
+- `python solution.py --help` — show all options.
+
+### Outputs
 
 | Path | Description |
 |------|-------------|
-| `output/result.csv` | The 79-row submission |
-| `output/result_with_evidence.json` | Full per-row evidence bundle |
-| `output/heatmap.png` | Payer restrictiveness heatmap |
-| `output/score_distribution.png` | Access Score histogram by brand |
-| `output/audit/<filename>__<brand>.html` | Per-row audit card with snippet+score waterfall |
-| `output/audit/index.html` | Click-through index of all cards |
+| **`output/result.csv`** | **The 79-row submission deliverable (15 columns)** |
+| `output/audit/<filename>__<brand>.html` | Per-row audit card with evidence snippets + score waterfall |
+| `output/audit/index.html` | Click-through index of all 79 audit cards |
+| `output/heatmap.png` | Per-row restrictiveness heatmap |
+| `output/score_distribution.png` | Access Score histogram |
+| `output/diagnostics.json` | Pipeline diagnostics (per-row LLM call metadata + traces) |
+
+### Project layout inside the ZIP
+
+```
+arein_submission/
+├── solution.py                  # ← DRIVER (run with `python solution.py`)
+├── .env.example                 # ← Copy to `.env`, fill in GROQ_API_KEY
+├── README.md                    # ← This file
+├── requirements.txt             # ← Python dependencies
+├── Sample_PsO_ADS_Track/        # ← 70 input PDFs
+│   ├── 330109-4880941.pdf
+│   ├── 148593-4960549.pdf
+│   └── ... (68 more)
+├── PA_Business_Rules.xlsx       # ← Reference rules + Submissions sheet
+├── src/                         # ← Modular source (solution.py is built from this)
+├── tests/                       # ← Unit + smoke tests
+├── templates/                   # ← Jinja audit-card template
+├── data/llm_cache/              # ← (optional) pre-computed cache for free re-runs
+├── output/                      # ← (optional) our reference output for comparison
+└── holdout/                     # ← (optional) hand-labelled accuracy harness
+```
+
+### Re-running with cached responses
+
+If the bundled `data/llm_cache/` is present, re-runs hit the cache and skip the Groq calls entirely — useful when the evaluator wants to reproduce our `output/result.csv` without spending tokens. To force fresh LLM calls, clear the cache first:
+
+```bash
+rm -f data/llm_cache/*.json
+python solution.py
+```
+
+---
+
+## Model declaration
+
+**This submission uses two models from the Llama family via Groq free tier**, both spec-compliant per hackathon rules:
+
+| Pipeline step | Model | Why this model |
+|---|---|---|
+| Combined extraction (8 scalars + step-therapy text + has_step_therapy flag) | `llama-3.1-8b-instant` | Fast + high daily-token budget (500K TPD). Handles structured extraction of well-defined fields reliably. |
+| Step-graph decomposition (AND/OR/LEAF structure for step therapy) | `llama-3.3-70b-versatile` | Needs reasoning over nested step requirements. Only invoked when step therapy is detected (~30 of 79 rows), keeping us well under 70B's 100K TPD. |
+
+All non-LLM pipeline steps (segmentation, step counting, validation, access scoring) are deterministic Python — fully reproducible and unit-tested.
 
 ---
 
 ## Pipeline shape
 
 ```
-70 PDFs ──► pdftotext ──► brand-section slice ──► Llama-3.3-70b (3 grouped prompts, Groq)
-                                                       │
-                                                       ▼
-                                          structured JSON (step_graph, scalars)
-                                                       │
-                                                       ▼
-                            deterministic Python: step counter + validators + access score
-                                                       │
-                                                       ▼
-                              result.csv  +  per-row evidence JSON  +  HTML audit cards
+70 PDFs ──► pdftotext ──► brand-section slice ──┬─► Llama-3.1-8b (1 combined call):
+                                                │    8 scalars/text fields + verbatim step_therapy_text + has_step_therapy flag
+                                                │
+                                                ▼
+                          (if has_step_therapy OR Python keyword heuristic fires)
+                                                │
+                                                ▼
+                          Llama-3.3-70b: structure step therapy into AND/OR/LEAF graph
+                                                │
+                                                ▼
+                          deterministic Python: step counter + validators + access score
+                                                │
+                                                ▼
+                          result.csv  +  per-row evidence JSON  +  HTML audit cards
 ```
 
 ### Why this shape
 
-- **Text-first, no OCR.** All 70 PDFs in the sample corpus extract cleanly with `pdftotext -layout`. The text-first path keeps each prompt under ~3K input tokens and avoids multimodal complexity entirely.
-- **Three grouped prompts (not 12), not one monolithic.** Prompt A returns 5 scalars, Prompt B returns the step-therapy text and a structured `step_graph`, Prompt C returns three long-form text fields. This stays small enough to JSON-validate every response yet large enough that we only burn 3 calls per row (237 total), well within Groq's free-tier rate limits.
-- **LLM builds the step graph, Python counts.** Asking the LLM for an integer step count is brittle. Asking it to decompose the step therapy into an `AND/OR/LEAF` graph and then counting deterministically in Python is auditable: the trace prints each leaf, each OR-path choice, and the final sum.
+- **Text-first, no OCR.** All 70 PDFs in the sample corpus extract cleanly with `pdftotext -layout`. Skips multimodal complexity entirely.
+- **Brand-aware segmentation.** `segment_brand.py` isolates the PsO-relevant slice for each `(Filename, Brand)` row using 3 layout heuristics (single-drug / multi-drug / mega-formulary). Cuts LLM input from ~50K to ~2K chars per row — a ~95% token reduction that keeps every call comfortably under Groq's per-request TPM cap.
+- **One combined 8B call instead of 3 separate.** The 8 simple-extract fields (age, TB test, durations, specialist, quantity limits, reauth criteria, reauth required) are folded into a single `llama-3.1-8b-instant` call alongside the verbatim step-therapy text and a `has_step_therapy` flag. One JSON schema, one cache key, one round trip per row.
+- **70B reserved for the hardest task.** Step-therapy decomposition into AND/OR/LEAF is the only step that genuinely benefits from `llama-3.3-70b-versatile`'s reasoning. It's invoked only when step therapy is detected (~30 of 79 rows), keeping us under 70B's 100K TPD daily budget.
+- **Python keyword heuristic backs up the LLM flag.** `_has_step_therapy_markers()` scans the segment for "step therapy", "previously received", "inadequate response", "contraindication to" etc. If either signal fires, 70B gets called. Defensive — false positives are cheap, false negatives would silently drop step counts.
+- **LLM builds the step graph, Python counts.** Asking the LLM for an integer step count is brittle. Asking it to decompose into `AND/OR/LEAF` and then counting deterministically in Python is auditable: the trace prints each leaf, each OR-path choice, and the final sum.
 - **Whitelist re-classification.** The PsO Brands sheet provides a 35-drug ground-truth split (branded biologic vs generic systemic vs topical). When the LLM mis-labels a drug class, `step_graph.reconcile_class` overrides via whitelist match — see `tests/test_step_counting.py::test_branded_step_counting_via_whitelist`.
+- **Graceful degradation.** If a 70B call fails (rate limit, network), the row still lands in CSV with 8B fields intact — step counts default to `NA`, and the failure is logged. No row is ever lost.
 
 ---
 

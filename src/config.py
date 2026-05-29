@@ -15,8 +15,31 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = PROJECT_ROOT.parent
 
-PDF_DIR = REPO_ROOT / "Sample_PsO_ADS_Track"
-RULES_XLSX = REPO_ROOT / "PA_Business_Rules.xlsx"
+
+def _resolve_data_path(name: str) -> Path:
+    """Find PDFs/xlsx in either layout:
+
+      (a) Submission layout: PROJECT_ROOT/<name>  — everything ships inside
+          the ZIP at relative paths so the evaluator can unzip-and-run.
+      (b) Dev layout:        PROJECT_ROOT.parent/<name>  — PDFs and xlsx
+          live one directory above the project for the developer's
+          convenience (source data isn't duplicated into the repo).
+
+    Tries (a) first, falls back to (b). If neither exists, returns the
+    submission-layout path so the missing-file error message points at
+    the location an evaluator should populate.
+    """
+    submission_path = PROJECT_ROOT / name
+    dev_path = REPO_ROOT / name
+    if submission_path.exists():
+        return submission_path
+    if dev_path.exists():
+        return dev_path
+    return submission_path
+
+
+PDF_DIR = _resolve_data_path("Sample_PsO_ADS_Track")
+RULES_XLSX = _resolve_data_path("PA_Business_Rules.xlsx")
 
 DATA_DIR = PROJECT_ROOT / "data"
 TEXT_CACHE = DATA_DIR / "text"
@@ -206,11 +229,44 @@ LARGE_PDF_TEXT_THRESHOLD = 300_000  # >= this many chars → Medicaid mega-formu
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def get_api_key() -> str | None:
-    """Return the Groq API key from env, or None if not set.
+def _load_env_file(path: Path) -> int:
+    """Minimal .env parser — no python-dotenv dependency required.
 
-    Pipeline tolerates a missing key for the local cache-replay path but
-    will raise when an actual call is needed."""
+    Supports KEY=VALUE lines, comments starting with '#', and quoted values.
+    Existing os.environ entries are NOT overwritten (real env wins over
+    file). Returns the number of new vars loaded.
+    """
+    if not path.exists():
+        return 0
+    loaded = 0
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip surrounding quotes if present
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded += 1
+    return loaded
+
+
+# Auto-load .env on import. Tries the project root first; falls back to cwd
+# so the driver can be run from anywhere with a co-located .env.
+_load_env_file(PROJECT_ROOT / ".env")
+_load_env_file(Path.cwd() / ".env")
+
+
+def get_api_key() -> str | None:
+    """Return the Groq API key from env (or loaded from .env), or None if
+    not set. Pipeline tolerates a missing key for the local cache-replay
+    path but will raise when an actual call is needed."""
     return os.environ.get(LLM_API_KEY_ENV)
 
 

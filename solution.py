@@ -153,8 +153,31 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPO_ROOT = PROJECT_ROOT.parent
 
-PDF_DIR = REPO_ROOT / "Sample_PsO_ADS_Track"
-RULES_XLSX = REPO_ROOT / "PA_Business_Rules.xlsx"
+
+def _resolve_data_path(name: str) -> Path:
+    """Find PDFs/xlsx in either layout:
+
+      (a) Submission layout: PROJECT_ROOT/<name>  — everything ships inside
+          the ZIP at relative paths so the evaluator can unzip-and-run.
+      (b) Dev layout:        PROJECT_ROOT.parent/<name>  — PDFs and xlsx
+          live one directory above the project for the developer's
+          convenience (source data isn't duplicated into the repo).
+
+    Tries (a) first, falls back to (b). If neither exists, returns the
+    submission-layout path so the missing-file error message points at
+    the location an evaluator should populate.
+    """
+    submission_path = PROJECT_ROOT / name
+    dev_path = REPO_ROOT / name
+    if submission_path.exists():
+        return submission_path
+    if dev_path.exists():
+        return dev_path
+    return submission_path
+
+
+PDF_DIR = _resolve_data_path("Sample_PsO_ADS_Track")
+RULES_XLSX = _resolve_data_path("PA_Business_Rules.xlsx")
 
 DATA_DIR = PROJECT_ROOT / "data"
 TEXT_CACHE = DATA_DIR / "text"
@@ -344,11 +367,44 @@ LARGE_PDF_TEXT_THRESHOLD = 300_000  # >= this many chars → Medicaid mega-formu
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def get_api_key() -> str | None:
-    """Return the Groq API key from env, or None if not set.
+def _load_env_file(path: Path) -> int:
+    """Minimal .env parser — no python-dotenv dependency required.
 
-    Pipeline tolerates a missing key for the local cache-replay path but
-    will raise when an actual call is needed."""
+    Supports KEY=VALUE lines, comments starting with '#', and quoted values.
+    Existing os.environ entries are NOT overwritten (real env wins over
+    file). Returns the number of new vars loaded.
+    """
+    if not path.exists():
+        return 0
+    loaded = 0
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip()
+        # Strip surrounding quotes if present
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+            loaded += 1
+    return loaded
+
+
+# Auto-load .env on import. Tries the project root first; falls back to cwd
+# so the driver can be run from anywhere with a co-located .env.
+_load_env_file(PROJECT_ROOT / ".env")
+_load_env_file(Path.cwd() / ".env")
+
+
+def get_api_key() -> str | None:
+    """Return the Groq API key from env (or loaded from .env), or None if
+    not set. Pipeline tolerates a missing key for the local cache-replay
+    path but will raise when an actual call is needed."""
     return os.environ.get(LLM_API_KEY_ENV)
 
 
@@ -3045,5 +3101,67 @@ process_row = pipeline.process_row
 seed_cache = mock_seed.seed_all
 
 
+def main():
+    """Driver entry point — `python solution.py`.
+
+    Runs the full 79-row pipeline, renders audit cards + visualisations,
+    and prints the location of result.csv. Honors GROQ_API_KEY from .env
+    (loaded automatically by config.py) or the process environment.
+
+    CLI:
+      python solution.py            # full 79-row run
+      python solution.py --limit 5  # process first 5 rows only (debug)
+    """
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="solution.py",
+        description="Arein Payer Policy Intelligence — single-file submission driver.",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="Process only the first N rows (debug; default: all 79).",
+    )
+    parser.add_argument(
+        "--no-cards", action="store_true",
+        help="Skip rendering audit cards + visualisations after the pipeline run.",
+    )
+    args = parser.parse_args()
+
+    # Sanity-check the API key BEFORE we start the run so the evaluator
+    # gets a clear error early rather than per-row failures deep in the run.
+    if not config.get_api_key():
+        import sys
+        print(
+            f"\nERROR: {config.LLM_API_KEY_ENV} not set.\n"
+            "  Either set it in your shell or create a `.env` file at the project root\n"
+            "  with: GROQ_API_KEY=gsk_xxxxx\n",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    print(f"Arein PA Pipeline — model={config.LLM_MODEL_FAST} (combined) + {config.LLM_MODEL} (step graph)")
+    print(f"PDFs:      {config.PDF_DIR}")
+    print(f"Rules:     {config.RULES_XLSX}")
+    print(f"Output:    {config.RESULT_CSV}")
+    print()
+
+    df = run_all(limit=args.limit, verbose=True)
+
+    if not args.no_cards:
+        try:
+            print("\nRendering audit cards...")
+            evidence_report.render_all()
+            evidence_report.render_index()
+            print(f"Audit cards: {config.AUDIT_DIR}")
+            print("\nRendering visualisations...")
+            visualize.render_heatmap()
+            visualize.render_score_distribution()
+            print(f"Heatmap:     {config.HEATMAP_PNG}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  (audit/visualisation step skipped: {exc})")
+
+    print(f"\nDone. {len(df)} rows written to {config.RESULT_CSV}")
+
+
 if __name__ == "__main__":
-    run_all()
+    main()

@@ -178,8 +178,70 @@ process_row = pipeline.process_row
 seed_cache = mock_seed.seed_all
 
 
+def main():
+    """Driver entry point — `python solution.py`.
+
+    Runs the full 79-row pipeline, renders audit cards + visualisations,
+    and prints the location of result.csv. Honors GROQ_API_KEY from .env
+    (loaded automatically by config.py) or the process environment.
+
+    CLI:
+      python solution.py            # full 79-row run
+      python solution.py --limit 5  # process first 5 rows only (debug)
+    """
+    import argparse
+    parser = argparse.ArgumentParser(
+        prog="solution.py",
+        description="Arein Payer Policy Intelligence — single-file submission driver.",
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="Process only the first N rows (debug; default: all 79).",
+    )
+    parser.add_argument(
+        "--no-cards", action="store_true",
+        help="Skip rendering audit cards + visualisations after the pipeline run.",
+    )
+    args = parser.parse_args()
+
+    # Sanity-check the API key BEFORE we start the run so the evaluator
+    # gets a clear error early rather than per-row failures deep in the run.
+    if not config.get_api_key():
+        import sys
+        print(
+            f"\\nERROR: {config.LLM_API_KEY_ENV} not set.\\n"
+            "  Either set it in your shell or create a `.env` file at the project root\\n"
+            "  with: GROQ_API_KEY=gsk_xxxxx\\n",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    print(f"Arein PA Pipeline — model={config.LLM_MODEL_FAST} (combined) + {config.LLM_MODEL} (step graph)")
+    print(f"PDFs:      {config.PDF_DIR}")
+    print(f"Rules:     {config.RULES_XLSX}")
+    print(f"Output:    {config.RESULT_CSV}")
+    print()
+
+    df = run_all(limit=args.limit, verbose=True)
+
+    if not args.no_cards:
+        try:
+            print("\\nRendering audit cards...")
+            evidence_report.render_all()
+            evidence_report.render_index()
+            print(f"Audit cards: {config.AUDIT_DIR}")
+            print("\\nRendering visualisations...")
+            visualize.render_heatmap()
+            visualize.render_score_distribution()
+            print(f"Heatmap:     {config.HEATMAP_PNG}")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  (audit/visualisation step skipped: {exc})")
+
+    print(f"\\nDone. {len(df)} rows written to {config.RESULT_CSV}")
+
+
 if __name__ == "__main__":
-    run_all()
+    main()
 '''
 
 
