@@ -117,12 +117,27 @@ Read `NEXTSTEPS.md` at the project root and present its contents. That file owns
 - Don't extend `mock_seed.py` to look smart. It's a development scaffold; the README is honest about what it is. Improving it risks the user confusing synthetic output with real extraction.
 - Don't remove the per-cell evidence sidecar or the audit cards — they ARE the standout interpretability layer.
 
-## Status snapshot (as of last build)
+## Current architecture & progress
 
-- Full 79-row pipeline runs cold-cache in ~11 s with synthetic seeds
-- 6/6 step-counter unit tests pass
-- Offline smoke test passes
-- 79 audit cards + index render
-- Heatmap + score distribution PNGs render
-- Submission ZIP: ~727 KB
-- Outstanding user work: (1) set `GROQ_API_KEY` + clear cache + re-run, (2) hand-label 8 rows in `holdout/holdout_labels.csv`, (3) optionally tune rubric weights.
+The evolving project state — current architecture ("Option H" hybrid), what's
+done, what's left, and the bug-fix history — lives in **`PROGRESS.md`** at the
+project root. Read it at the start of a session to load context. Update it
+whenever a meaningful chunk of work lands; keep CLAUDE.md for durable
+instructions and hard rules only.
+
+Quick orientation (see PROGRESS.md for detail):
+
+- **Pipeline shape:** per `(Filename, Brand)`, one `llama-3.1-8b-instant`
+  combined call (scalars + verbatim `step_therapy_text` + `has_step_therapy`),
+  then a conditional `llama-3.3-70b-versatile` call that structures step therapy
+  into an AND/OR/LEAF graph. Deterministic Python does counting, validation, and
+  scoring.
+- **Age rule** (`validate._normalise_age(value, brand)`): silent → `NA`;
+  "No restriction" → `No`; "adult" → `>=18`; "FDA labelled age" →
+  `config.FDA_MIN_AGE_PSO[brand]` as `>=N`; numeric → `>=N`.
+- **Reproducibility (MANDATORY, failure = nullified):** the ZIP must be
+  self-contained (PDFs, xlsx, code, `.env.example` at relative paths). Evaluator
+  unzips → `cp .env.example .env` → `python solution.py` → reads
+  `output/result.csv`, with NO code edits. Driver `solution.py` is built from
+  `src/` via `python build_single_file.py` — never edit it by hand. Never ship a
+  real `.env`.
