@@ -4,9 +4,9 @@ Running log of what's been built and what's left. CLAUDE.md holds durable
 agent instructions and hard rules; this file holds the evolving project state.
 Update this whenever a meaningful chunk of work lands.
 
-**Last updated:** 2026-05-30
+**Last updated:** 2026-05-30 (after full real-cache re-run)
 **Repo:** https://github.com/aryan-c0des/ADS_TT_Hackathon (branch `main`, public)
-**Latest commit:** `c854d39`
+**Latest commit:** `544bfab`
 **Deadline:** 9 AM IST, 1 June 2026
 
 ---
@@ -26,6 +26,56 @@ Update this whenever a meaningful chunk of work lands.
   (no indent) — all to stay under the 6000 TPM per-request cap.
 - Deterministic Python does the rest: `step_graph.count_steps`,
   `validate.validate`, `access_score.score_row`.
+
+---
+
+## Latest run — 2026-05-30 (full 79-row, real cache)
+
+Resumed in Colab with last night's downloaded cache; the 429 backlog cleared.
+
+- **Health:** 79 rows, 0 hard failures. 14 fresh LLM calls, 0 errors, **0
+  synthetic hits**, 110 real cache replays — confirms the cache is now the REAL
+  Colab cache (no `mock_seed` warning). 70B step graph invoked=45, succeeded=45,
+  failed=0.
+- **Age rule verified:** the fresh output resolves FDA-labelled refs to
+  drug-specific `>=N` (distribution: `>=18` ×37, `>=6` ×26, `>=12` ×2, `>=2` ×1,
+  `>=4` ×1) — the old `"FDA labelled age"` literal is gone.
+- **Score distribution:** min 12, max 59, mean 41.2. Buckets: NoAccess (0-25) 4,
+  Restricted (26-50) 63, Preferred (51-75) 12, Best (76-100) 0. Heavily
+  compressed in Restricted — plausibly genuine (all are restrictive PA
+  policies), but worth a sanity check.
+
+### Findings to act on
+
+1. **Specialist leaks — 6/79 flagged, 2 true leaks.** Multi-indication policies
+   leak non-PsO prescribers. Genuine leaks: row 74 OTEZLA (`Pulmonologist`, from
+   Behçet's) and row 78 STELARA (`Immunologist, Gastroenterologist, Colorectal
+   Surgeon`, from Crohn's/UC). The other 4 are `Dermatologist, Rheumatologist` —
+   defensible for PsO/PsA. Root cause: prompt-only scoping in
+   `extract_params.py`, no deterministic backstop in `validate.py`.
+   **Planned fix:** deterministic reject-list filter in `validate.py` (strip
+   Gastro/Colorectal/Pulmonologist/Immunologist/Hematologist/Oncologist/etc.,
+   keep Dermatologist + Rheumatologist) + a unit test.
+2. **Step-count outliers to spot-check:** brand steps = 7 (1 row), generic
+   steps = 6 (1 row, echoes the old OR-vs-AND mis-decomposition). Possible
+   over-count tanking a score.
+3. **NoAccess outliers:** 4 rows in 0-25 (min score 12) — confirm genuinely
+   restrictive vs. an artifact of step over-counting.
+4. **Possible age mis-extraction:** TREMFYA `>=2` (FDA min for PsO is 6) — verify
+   against the policy (`187701-5050284.pdf`).
+
+### Notes / gotchas
+
+- **Minor inefficiency:** step graph `fallback_to_segment=45/45` — the 8B's
+  `step_therapy_text` is never used; we always re-send the segment to 70B.
+  Harmless (counts populate) but that 8B output is currently dead weight.
+- **Stale local `result.csv`:** the `result.csv` beside the source PDFs (one
+  level up from the repo) PREDATES the Age fix (shows `"FDA labelled age"` and
+  different scores). The authoritative current output is the fresh Colab run —
+  do not verify against the local copy.
+- **Spot-check setup:** all 70 source PDFs are available locally at
+  `../Sample_PsO_ADS_Track/`, so PDF cross-checks need no upload — only the
+  fresh `result.csv` to compare against.
 
 ---
 
@@ -50,30 +100,30 @@ Update this whenever a meaningful chunk of work lands.
   layouts.
 - **Tests green** — 11 step-counter unit tests + 2 smoke tests
   (`smoke_pipeline_offline.py`, `smoke_solution_single_file.py`).
+- **Full real-cache re-run (2026-05-30)** cleared the 429 backlog — 79 rows, 0
+  hard failures, 0 synthetic hits; Age rule confirmed working in the output.
 
 ---
 
 ## What's LEFT
 
-1. **Re-run the ~20 TPD-failed (429) rows** in Colab to fill in missing step
-   counts. User has downloaded the output cache and can re-run only the failed
-   rows.
-2. **Replace the SYNTHETIC `mock_seed` cache** currently in the ZIP with the
-   REAL Colab cache, then repackage. A synthetic-seed warning currently prints
-   on run.
+1. ~~Re-run the TPD-failed (429) rows~~ **DONE (2026-05-30)** — backlog cleared
+   (14 fresh calls, 0 errors).
+2. **Package the REAL cache into the ZIP.** The real Colab `data/llm_cache/` now
+   exists (0 synthetic hits this run); pull it into the repo and repackage so
+   the shipped ZIP no longer falls back to `mock_seed`.
 3. **Fix text-cache reproducibility.** Dev `data/text/` is stale CRLF (~17,636
    chars) vs a fresh `pdftotext` run (~16,308 chars, LF) → cache-key mismatch
-   means an evaluator's fresh extraction won't hit the shipped LLM cache. Either
-   ship `data/text/` in the ZIP or regenerate it fresh before seeding.
-4. **Further refine extraction quality** — user's stated next intent (get
-   specifics before acting).
-5. Optional: hand-label 8 holdout rows in `holdout/holdout_labels.csv`; verify
-   Age outputs (FDA-labelled → drug-specific `>=N`) on the re-run.
+   means an evaluator's fresh extraction won't hit the shipped LLM cache. Ship
+   `data/text/` in the ZIP, or regenerate it fresh before seeding.
+4. **Refine extraction quality** (see "Findings to act on" above):
+   - Specialist deterministic filter in `validate.py` (highest-value, clear win).
+   - Spot-check brand=7 / generic=6 / NoAccess outliers + TREMFYA `>=2` age.
+5. Optional: hand-label 8 holdout rows in `holdout/holdout_labels.csv`.
 
-**Submission-blocking pair:** #2 + #3. The shipped cache is synthetic and the
-dev text cache won't hash-match a fresh `pdftotext` run, so an evaluator's run
-won't reproduce our numbers from cache. Cleanest fix: ship `data/text/`
-alongside the real `data/llm_cache/` so keys line up.
+**Submission-blocking pair:** #2 + #3 — the evaluator must reproduce our numbers
+from the shipped cache. Cleanest fix: ship `data/text/` alongside the real
+`data/llm_cache/` so keys line up.
 
 ---
 

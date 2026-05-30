@@ -96,6 +96,7 @@ If you touch any of these, `tests/test_step_counting.py` must still pass — tho
 - **Brand canonicalization** happens in `config.canonical_brand()`. Use it — don't compare brand strings raw.
 - **Multi-brand PDFs** (9 of the 70) appear in the Submissions sheet as separate rows. Pipeline iterates Submissions, not PDFs.
 - **The 13 minor brands** (AMJEVITA, COSENTYX, etc., 18 rows total) are likely the weakest spot for accuracy. Spot-check those audit cards before submitting.
+- **Specialist Types must be PsO-scoped.** Multi-indication policies (STELARA, OTEZLA, etc.) list a prescriber per indication; only Dermatologist — and Rheumatologist when the PsO/PsA criteria name it — are valid. Specialties from co-indications (Gastroenterologist, Colorectal Surgeon, Pulmonologist, Immunologist, Hematologist, Oncologist) must be stripped. Prompt scoping in `extract_params.py` is unreliable on the 8B model; the deterministic backstop belongs in `validate.py`.
 
 ## When the user asks "what are my next steps"
 
